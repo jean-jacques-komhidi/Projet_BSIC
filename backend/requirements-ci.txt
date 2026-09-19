@@ -2,13 +2,12 @@
 # Dependances pour le CI (tests automatiques uniquement)
 # ===========================================================================
 # Version allegee : uniquement ce qui est necessaire pour lancer les tests.
-# Les bibliotheques non testees dans le CI (mlflow, groq, reportlab) sont
-# volontairement omises pour un CI plus rapide et fiable.
 # ===========================================================================
 
 fastapi
 pydantic
 sqlalchemy
+psycopg[binary]
 python-dotenv
 passlib[bcrypt]
 bcrypt==4.0.1
