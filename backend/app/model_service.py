@@ -38,6 +38,10 @@ class ServiceModele:
     """Encapsule le modele et ses operations."""
 
     def __init__(self, chemin=CHEMIN_MODELE):
+        if not os.path.exists(chemin):
+            raise FileNotFoundError(
+                f"Le modele est introuvable : {chemin}. "
+                "Verifiez qu'il a bien ete entraine et place dans le dossier models.")
         self.pipeline = joblib.load(chemin)
         self.preparateur = self.pipeline.named_steps["prep"]
         self.classifieur = self.pipeline.named_steps["clf"]

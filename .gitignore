@@ -26,6 +26,7 @@ backend/notebook/*.csv
 .env.*
 !.env.exemple
 backend/.env
+backend/logs/
 
 # --- MLflow (artefacts et donnees locales) ---
 backend/mlflow/artifacts/

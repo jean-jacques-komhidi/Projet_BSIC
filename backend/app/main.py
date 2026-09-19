@@ -16,41 +16,36 @@ Routes principales :
 Pour la lancer : uvicorn app.main:app --reload
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .schemas import DossierCredit, ResultatAnalyse
 from .model_service import ServiceModele
-from . import auth_routes
-from . import client_routes
-from . import analyse_routes
-from . import reentrainement_routes
-from . import chatbot_routes
-from . import dashboard_routes
-from . import drift_routes
+from .logging_config import logger
+from .erreurs import enregistrer_gestionnaires
+from . import auth_routes, client_routes, analyse_routes
+from . import reentrainement_routes, chatbot_routes, dashboard_routes, drift_routes
 
 app = FastAPI(
     title="API CREDISCORE - BSIC Tchad",
     description="Service de scoring du risque de defaut de paiement de credit.",
-    version="1.6.0",
+    version="1.7.0",
 )
 
-# --- CORS : autorise l'interface (frontend) a communiquer avec l'API ---
-# En developpement, on autorise les adresses locales habituelles de React.
-# En production, remplacer par l'adresse reelle du frontend.
-origines_autorisees = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",   # Vite (autre outil React courant)
-    "http://127.0.0.1:5173",
-]
+# --- Gestion centralisee des erreurs ---
+enregistrer_gestionnaires(app)
 
+# --- CORS : autorise l'interface (frontend) a communiquer avec l'API ---
+origines_autorisees = [
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origines_autorisees,
     allow_credentials=True,
-    allow_methods=["*"],       # autorise toutes les methodes (GET, POST, etc.)
-    allow_headers=["*"],       # autorise tous les en-tetes (dont le jeton)
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- Routes ---
@@ -62,16 +57,39 @@ app.include_router(chatbot_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(drift_routes.router)
 
-service = ServiceModele()
+# --- Chargement du modele au demarrage (avec gestion d'erreur) ---
+service = None
+try:
+    service = ServiceModele()
+    logger.info("Modele charge avec succes au demarrage.")
+except Exception as e:
+    logger.error(f"Impossible de charger le modele au demarrage : {e}")
+    # L'API demarre quand meme ; la route /analyser signalera l'indisponibilite.
+
+
+@app.on_event("startup")
+def au_demarrage():
+    logger.info("API CREDISCORE demarree (version 1.7.0).")
 
 
 @app.get("/")
 def accueil():
-    return {"message": "API CREDISCORE operationnelle", "version": "1.6.0"}
+    """Route de verification : confirme que l'API est en ligne."""
+    return {
+        "message": "API CREDISCORE operationnelle",
+        "version": "1.7.0",
+        "modele_charge": service is not None,
+    }
 
 
 @app.post("/analyser", response_model=ResultatAnalyse)
 def analyser_dossier(dossier: DossierCredit):
     """Simule une analyse de credit (sans enregistrement)."""
+    if service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Le modele de scoring est indisponible. Contactez l'administrateur.")
     resultat = service.analyser(dossier.model_dump())
+    logger.info(f"Analyse simulee : decision={resultat['decision']}, "
+                f"proba={resultat['probabilite_defaut']}")
     return resultat

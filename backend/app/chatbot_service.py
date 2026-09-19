@@ -131,4 +131,14 @@ def repondre(db: Session, question: str, analyse_id: int = None) -> str:
         )
         return reponse.choices[0].message.content.strip()
     except Exception as e:
-        return f"Une erreur est survenue lors de l'appel a l'assistant : {e}"
+        from .logging_config import logger
+        message = str(e).lower()
+        logger.error(f"Erreur chatbot (Groq) : {e}")
+        if "rate limit" in message or "quota" in message or "429" in message:
+            return ("L'assistant est temporairement surcharge (limite de requetes "
+                    "atteinte). Veuillez reessayer dans quelques instants.")
+        if "authentication" in message or "api key" in message or "401" in message:
+            return ("L'assistant n'est pas correctement configure (cle API invalide). "
+                    "Contactez l'administrateur.")
+        return ("L'assistant est momentanement indisponible. "
+                "Veuillez reessayer plus tard.")
