@@ -1,14 +1,13 @@
 # ===========================================================================
 # CI/CD - CREDISCORE-BSIC
 # ===========================================================================
-# Ce workflow s'execute automatiquement a chaque push et pull request sur la
-# branche principale. Il verifie que le code s'installe correctement, que
-# l'API demarre sans erreur, et que les tests automatiques passent.
+# S'execute a chaque push et pull request sur la branche principale.
+# Verifie que le code s'installe, que les modules cles s'importent, et que
+# les tests automatiques passent.
 # ===========================================================================
 
 name: CI CREDISCORE
 
-# Declencheurs : a chaque push et pull request sur main
 on:
   push:
     branches: [ main, master ]
@@ -21,25 +20,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Recuperer le code du depot
       - name: Recuperer le code
         uses: actions/checkout@v4
 
-      # 2. Installer Python 3.11 (la version du projet)
       - name: Installer Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3. Installer les dependances
+      # Installer les dependances necessaires aux tests (version allegee)
       - name: Installer les dependances
         working-directory: ./backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements-ci.txt
 
-      # 4. Verifier que les modules cles s'importent sans erreur
+      # Verifier que les modules cles s'importent sans erreur
       - name: Verifier les imports
         working-directory: ./backend
         run: |
@@ -47,8 +43,7 @@ jobs:
           python -c "from app.explication import generer_explication; print('explication OK')"
           python -c "from app.security import hacher_mot_de_passe; print('security OK')"
 
-      # 5. Lancer les tests automatiques
-      #    (les tests ne necessitent ni base de donnees ni cle API)
+      # Lancer les tests automatiques
       - name: Lancer les tests
         working-directory: ./backend
         run: pytest tests/ -v
