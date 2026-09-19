@@ -1,0 +1,41 @@
+# ===========================================================================
+# .gitignore - CREDISCORE-BSIC (backend)
+# ===========================================================================
+
+# --- Environnement virtuel ---
+venv/
+env/
+
+# --- Fichiers Python temporaires ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Donnees volumineuses (a ne pas versionner) ---
+data/*.csv
+notebook/*.csv
+*.xlsx
+
+# --- Secrets : NE JAMAIS PUBLIER ---
+.env
+.env.*
+!.env.exemple
+
+# --- MLflow (artefacts et donnees locales) ---
+mlflow/artifacts/
+mlruns/
+
+# --- Systeme d'exploitation ---
+.DS_Store
+Thumbs.db
+
+# --- Fichiers de diagnostic temporaires ---
+test_connexion.py
+
+# --- Editeurs ---
+.vscode/
+.idea/

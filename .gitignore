@@ -1,0 +1,49 @@
+# ===========================================================================
+# .gitignore - Projet_BSIC (racine : backend + frontend)
+# ===========================================================================
+
+# --- Environnements virtuels ---
+backend/venv/
+backend/env/
+venv/
+
+# --- Fichiers Python temporaires ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Donnees volumineuses (a ne pas versionner) ---
+backend/data/*.csv
+backend/notebook/*.csv
+*.xlsx
+
+# --- Secrets : NE JAMAIS PUBLIER ---
+.env
+.env.*
+!.env.exemple
+backend/.env
+
+# --- MLflow (artefacts et donnees locales) ---
+backend/mlflow/artifacts/
+mlruns/
+
+# --- Fichiers de diagnostic temporaires ---
+backend/test_connexion.py
+
+# --- Frontend (Node.js / React) ---
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+
+# --- Systeme d'exploitation ---
+.DS_Store
+Thumbs.db
+
+# --- Editeurs ---
+.vscode/
+.idea/
