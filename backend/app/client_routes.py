@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Routes de gestion des clients (CRUD complet).
+Routes de gestion des clients (CRUD complet + recherche).
 
-  - POST   /clients        : creer un client (Create)
-  - GET    /clients        : lister les clients (Read)
-  - GET    /clients/{id}   : voir un client (Read)
-  - PUT    /clients/{id}   : modifier un client (Update)
-  - DELETE /clients/{id}   : supprimer un client (Delete)
+  - POST   /clients             : creer un client (Create)
+  - GET    /clients             : lister les clients (Read)
+  - GET    /clients/recherche   : rechercher des clients par nom (Read)
+  - GET    /clients/{id}        : voir un client (Read)
+  - PUT    /clients/{id}        : modifier un client (Update)
+  - DELETE /clients/{id}        : supprimer un client (Delete)
 
 Toutes ces routes necessitent d'etre connecte (agent ou administrateur).
 La suppression est reservee a l'administrateur.
-
-Le client ne contient que l'identite de base ; les donnees financieres sont
-saisies au moment de l'analyse.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .database import get_db
@@ -55,6 +53,27 @@ def lister_clients(
 ):
     """Liste tous les clients. Necessite d'etre connecte."""
     return db.query(models.Client).all()
+
+
+# --- READ : rechercher des clients par nom ---
+# IMPORTANT : cette route doit etre declaree AVANT /clients/{client_id},
+# sinon "recherche" serait interprete comme un identifiant.
+@router.get("/recherche", response_model=list[ClientReponse])
+def rechercher_clients(
+    nom: str = Query(..., min_length=1, description="Nom (ou partie du nom) a rechercher"),
+    db: Session = Depends(get_db),
+    utilisateur: models.User = Depends(utilisateur_courant),
+):
+    """Recherche les clients dont le nom contient le texte fourni.
+
+    La recherche est partielle et insensible a la casse : chercher "kad"
+    trouvera "Kadidja Moussa". Necessite d'etre connecte.
+    """
+    motif = f"%{nom}%"
+    clients = db.query(models.Client).filter(
+        models.Client.nom.ilike(motif)
+    ).all()
+    return clients
 
 
 # --- READ : voir un client precis ---
