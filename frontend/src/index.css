@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* ===================================================================
+   THÈME CREDISCORE - BSIC
+   Couleurs sobres et professionnelles, avec mode clair et mode nuit
+   =================================================================== */
+
+@theme {
+  /* Couleur principale : bleu BSIC */
+  --color-bsic: #1B6CA8;
+  --color-bsic-dark: #14507d;
+  --color-bsic-light: #e8f1f8;
+
+  /* Couleurs neutres */
+  --color-encre: #1a1a1a;
+  --color-gris: #6b7280;
+  --color-gris-clair: #f4f5f7;
+
+  /* Couleurs d'état (sobres) */
+  --color-succes: #0f6e56;
+  --color-danger: #c0392b;
+  --color-alerte: #b7791f;
+
+  /* Typographie */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Variables de thème : mode clair (par défaut) */
+:root {
+  --fond: #ffffff;
+  --fond-secondaire: #f4f5f7;
+  --fond-carte: #ffffff;
+  --texte: #1a1a1a;
+  --texte-secondaire: #6b7280;
+  --bordure: #e5e7eb;
+}
+
+/* Mode nuit : full noir */
+.dark {
+  --fond: #000000;
+  --fond-secondaire: #0a0a0a;
+  --fond-carte: #141414;
+  --texte: #f5f5f5;
+  --texte-secondaire: #a0a0a0;
+  --bordure: #262626;
+}
+
+/* Application de base */
+body {
+  background-color: var(--fond);
+  color: var(--texte);
+  font-family: var(--font-sans);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
