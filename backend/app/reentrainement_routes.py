@@ -19,6 +19,7 @@ from .database import get_db
 from . import models
 from .security import administrateur_courant
 from .reentrainement import reentrainer
+from .notification_service import creer_notification
 from .model_service import ServiceModele
 
 router = APIRouter(prefix="/reentrainer", tags=["Reentrainement"])
@@ -35,6 +36,16 @@ def lancer_reentrainement(
     de donnees reelles integrees depuis la base.
     """
     resume = reentrainer(db, avec_mlflow=True)
+
+    # Creer une notification pour informer de la fin du reentrainement
+    creer_notification(
+        db,
+        titre="Reentrainement termine",
+        message=f"Le modele a ete reentraine. Meilleur modele : {resume['meilleur_modele']} "
+                f"(AUC = {resume['auc_test']}). {resume['donnees_reelles_integrees']} "
+                f"donnees reelles integrees.",
+        type="succes",
+    )
 
     # Recharger le modele fraichement entraine dans le service utilise par l'API
     # pour que les analyses suivantes utilisent la nouvelle version.

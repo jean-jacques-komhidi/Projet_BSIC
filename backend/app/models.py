@@ -65,3 +65,14 @@ class Analyse(Base):
     client = relationship("Client", back_populates="analyses")
     utilisateur = relationship("User", back_populates="analyses")
     version_modele = relationship("ModelVersion", back_populates="analyses")
+
+class Notification(Base):
+    """Une notification pour informer les utilisateurs d'un evenement."""
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titre = Column(String(150), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(30), default="info")   # info, succes, alerte
+    lue = Column(Boolean, default=False)
+    date_creation = Column(DateTime, default=datetime.utcnow)

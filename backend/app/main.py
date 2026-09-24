@@ -23,7 +23,7 @@ from .schemas import DossierCredit, ResultatAnalyse
 from .model_service import ServiceModele
 from .logging_config import logger
 from .erreurs import enregistrer_gestionnaires
-from . import auth_routes, client_routes, analyse_routes
+from . import auth_routes, client_routes, analyse_routes, notification_routes
 from . import reentrainement_routes, chatbot_routes, dashboard_routes, drift_routes
 
 app = FastAPI(
@@ -56,6 +56,7 @@ app.include_router(reentrainement_routes.router)
 app.include_router(chatbot_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(drift_routes.router)
+app.include_router(notification_routes.router)
 
 # --- Chargement du modele au demarrage (avec gestion d'erreur) ---
 service = None

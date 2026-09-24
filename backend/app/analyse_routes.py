@@ -43,6 +43,30 @@ def obtenir_version_modele(db: Session) -> models.ModelVersion:
 
 
 # --- CREATE : realiser et enregistrer une analyse ---
+
+def _analyse_avec_facteurs(analyse):
+    """Transforme une analyse en dict avec les facteurs SHAP decodes."""
+    facteurs = []
+    if analyse.facteurs_explicatifs:
+        try:
+            facteurs = json.loads(analyse.facteurs_explicatifs)
+        except Exception:
+            facteurs = []
+    return {
+        "id": analyse.id,
+        "client_id": analyse.client_id,
+        "user_id": analyse.user_id,
+        "probabilite_defaut": analyse.probabilite_defaut,
+        "classe_risque": analyse.classe_risque,
+        "decision": analyse.decision,
+        "explication": analyse.explication,
+        "facteurs_explicatifs": facteurs,
+        "resultat_reel": analyse.resultat_reel,
+        "model_version_id": analyse.model_version_id,
+        "date_analyse": analyse.date_analyse,
+    }
+
+
 @router.post("", response_model=AnalyseReponse, status_code=201)
 def realiser_analyse(
     donnees: AnalyseCreation,
@@ -73,7 +97,7 @@ def realiser_analyse(
     db.add(analyse)
     db.commit()
     db.refresh(analyse)
-    return analyse
+    return _analyse_avec_facteurs(analyse)
 
 
 # --- READ : lister toutes les analyses ---
@@ -82,7 +106,14 @@ def lister_analyses(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    return db.query(models.Analyse).order_by(models.Analyse.date_analyse.desc()).all()
+    analyses = db.query(models.Analyse).order_by(models.Analyse.date_analyse.desc()).all()
+    resultat = []
+    for a in analyses:
+        d = _analyse_avec_facteurs(a)
+        client = db.query(models.Client).filter(models.Client.id == a.client_id).first()
+        d["nom_client"] = client.nom if client else None
+        resultat.append(d)
+    return resultat
 
 
 # --- READ : voir une analyse precise ---
@@ -95,7 +126,10 @@ def voir_analyse(
     analyse = db.query(models.Analyse).filter(models.Analyse.id == analyse_id).first()
     if not analyse:
         raise HTTPException(status_code=404, detail="Analyse introuvable")
-    return analyse
+    d = _analyse_avec_facteurs(analyse)
+    client = db.query(models.Client).filter(models.Client.id == analyse.client_id).first()
+    d["nom_client"] = client.nom if client else None
+    return d
 
 
 # --- READ : lister les analyses d'un client ---
