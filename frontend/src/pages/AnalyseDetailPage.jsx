@@ -1,24 +1,29 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import ScoreResult from "../components/ScoreResult";
 import ShapChart from "../components/ShapChart";
-import { getAnalyse, telechargerPdf } from "../services/analyseService";
-import { ArrowLeft, Loader2, Calendar, User, Hash } from "lucide-react";
+import { getAnalyse, telechargerPdf, renseignerResultat } from "../services/analyseService";
+import {
+  ArrowLeft, Loader2, Calendar, User, Hash, CheckCircle2, XCircle,
+  ThumbsUp, ThumbsDown, MessageSquare, Target,
+} from "lucide-react";
 
 export default function AnalyseDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isDark } = useTheme();
+  const { utilisateur } = useAuth();
+  const estAdmin = utilisateur?.role === "admin";
   const [analyse, setAnalyse] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [majResultat, setMajResultat] = useState(false);
 
-  useEffect(() => {
-    getAnalyse(id)
-      .then(setAnalyse)
-      .catch(() => setAnalyse(null))
-      .finally(() => setLoading(false));
-  }, [id]);
+  function charger() {
+    getAnalyse(id).then(setAnalyse).catch(() => setAnalyse(null)).finally(() => setLoading(false));
+  }
+  useEffect(() => { charger(); }, [id]);
 
   async function exporterPdf() {
     try {
@@ -30,9 +35,17 @@ export default function AnalyseDetailPage() {
     } catch { alert("Téléchargement impossible."); }
   }
 
-  const formatDate = (d) => d
-    ? new Date(d).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })
-    : "—";
+  async function definirResultat(resultat) {
+    setMajResultat(true);
+    try {
+      await renseignerResultat(id, resultat);
+      charger();
+    } catch {
+      alert("Impossible d'enregistrer le résultat.");
+    } finally {
+      setMajResultat(false);
+    }
+  }
 
   const cardClass = "rounded-2xl border p-5 " +
     (isDark ? "bg-zinc-900 border-zinc-800" : "bg-white border-gray-100 shadow-sm");
@@ -59,21 +72,25 @@ export default function AnalyseDetailPage() {
 
   return (
     <div className="pt-16 lg:pt-20">
-      {/* Barre supérieure : retour + titre */}
-      <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => navigate("/historique")}
-          className={"p-2 rounded-lg border transition " +
-            (isDark ? "border-zinc-800 text-zinc-400 hover:bg-zinc-800" : "border-gray-200 text-gray-500 hover:bg-gray-50")}>
-          <ArrowLeft size={18} />
-        </button>
-        <div>
-          <h1 className={"text-xl font-bold " + (isDark ? "text-white" : "text-gray-800")}>
-            Analyse #{analyse.id}
-          </h1>
-          <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>
-            Détail de la décision de crédit
-          </p>
+      {/* Barre supérieure */}
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate("/historique")}
+            className={"p-2 rounded-lg border transition " +
+              (isDark ? "border-zinc-800 text-zinc-400 hover:bg-zinc-800" : "border-gray-200 text-gray-500 hover:bg-gray-50")}>
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <h1 className={"text-xl font-bold " + (isDark ? "text-white" : "text-gray-800")}>Analyse #{analyse.id}</h1>
+            <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>Détail de la décision de crédit</p>
+          </div>
         </div>
+        {/* Bouton : demander à CrediBot sur ce dossier */}
+        <button onClick={() => navigate(`/assistant?analyse=${analyse.id}`)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition hover:opacity-90"
+          style={{ backgroundColor: "#2E86C1" }}>
+          <MessageSquare size={16} /> Interroger CrediBot
+        </button>
       </div>
 
       {/* Infos rapides */}
@@ -109,10 +126,57 @@ export default function AnalyseDetailPage() {
         </div>
       </div>
 
-      {/* Résultat + facteurs côte à côte */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Résultat + facteurs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         <ScoreResult result={analyse} onPdf={exporterPdf} />
         <ShapChart result={analyse} />
+      </div>
+
+      {/* Résultat réel (boucle MLOps) */}
+      <div className={cardClass}>
+        <div className="flex items-center gap-2 mb-1">
+          <Target size={16} style={{ color: "#2E86C1" }} />
+          <h2 className={"font-semibold text-sm " + (isDark ? "text-white" : "text-gray-800")}>Résultat réel du crédit</h2>
+        </div>
+        <p className={"text-xs mb-4 " + (isDark ? "text-zinc-500" : "text-gray-400")}>
+          Renseigner l'issue réelle du crédit permet d'enrichir les données et d'améliorer le modèle lors du réentraînement.
+        </p>
+
+        {analyse.resultat_reel ? (
+          // Résultat déjà renseigné
+          <div className="flex items-center gap-3">
+            {analyse.resultat_reel === "rembourse" ? (
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
+                style={{ backgroundColor: "#0F6E561a", color: "#0F6E56" }}>
+                <CheckCircle2 size={16} /> Crédit remboursé
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
+                style={{ backgroundColor: "#c0392b1a", color: "#c0392b" }}>
+                <XCircle size={16} /> Crédit en défaut
+              </span>
+            )}
+            <span className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>Résultat enregistré</span>
+          </div>
+        ) : estAdmin ? (
+          // Pas encore renseigné : boutons (admin uniquement)
+          <div className="flex flex-wrap gap-3">
+            <button onClick={() => definirResultat("rembourse")} disabled={majResultat}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border transition disabled:opacity-50"
+              style={{ borderColor: "#0F6E56", color: "#0F6E56" }}>
+              <ThumbsUp size={16} /> Marquer remboursé
+            </button>
+            <button onClick={() => definirResultat("defaut")} disabled={majResultat}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border transition disabled:opacity-50"
+              style={{ borderColor: "#c0392b", color: "#c0392b" }}>
+              <ThumbsDown size={16} /> Marquer en défaut
+            </button>
+          </div>
+        ) : (
+          <p className={"text-sm " + (isDark ? "text-zinc-500" : "text-gray-400")}>
+            Le résultat réel n'a pas encore été renseigné.
+          </p>
+        )}
       </div>
     </div>
   );

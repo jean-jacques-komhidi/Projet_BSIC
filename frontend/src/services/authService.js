@@ -29,3 +29,24 @@ export async function utilisateurCourant() {
 export function seDeconnecter() {
   localStorage.removeItem("token");
 }
+
+// Modifier ses propres informations
+export async function modifierMonProfil(donnees) {
+  const reponse = await api.put("/auth/moi", donnees);
+  return reponse.data;
+}
+
+// Statistiques de l'utilisateur connecté
+export async function getMesStatistiques() {
+  const reponse = await api.get("/auth/moi/statistiques");
+  return reponse.data;
+}
+
+// Changer son mot de passe (avec vérification de l'ancien)
+export async function changerMotDePasse(ancien, nouveau) {
+  const reponse = await api.put("/auth/moi/mot-de-passe", {
+    ancien_mot_de_passe: ancien,
+    nouveau_mot_de_passe: nouveau,
+  });
+  return reponse.data;
+}

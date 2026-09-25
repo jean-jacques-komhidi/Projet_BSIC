@@ -52,3 +52,30 @@ body {
   font-family: var(--font-sans);
   transition: background-color 0.3s ease, color 0.3s ease;
 }
+
+/* Style du Markdown dans le chat */
+.markdown-chat p { margin-bottom: 0.6rem; }
+.markdown-chat p:last-child { margin-bottom: 0; }
+.markdown-chat strong { font-weight: 700; }
+.markdown-chat ul { list-style: disc; padding-left: 1.2rem; margin-bottom: 0.6rem; }
+.markdown-chat ol { list-style: decimal; padding-left: 1.2rem; margin-bottom: 0.6rem; }
+.markdown-chat li { margin-bottom: 0.2rem; }
+.markdown-chat h1, .markdown-chat h2, .markdown-chat h3 { font-weight: 700; margin: 0.6rem 0 0.4rem; }
+.markdown-chat table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6rem 0;
+  font-size: 0.8rem;
+}
+.markdown-chat th, .markdown-chat td {
+  border: 1px solid var(--bordure);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.markdown-chat th { font-weight: 600; }
+.markdown-chat code {
+  background: var(--bordure);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+}

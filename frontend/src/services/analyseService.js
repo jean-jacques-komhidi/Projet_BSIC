@@ -33,3 +33,11 @@ export async function getAnalyse(id) {
   const reponse = await api.get(`/analyses/${id}`);
   return reponse.data;
 }
+
+// Renseigner le résultat réel d'une analyse (admin)
+export async function renseignerResultat(analyseId, resultat) {
+  const reponse = await api.put(`/analyses/${analyseId}/resultat`, null, {
+    params: { resultat },
+  });
+  return reponse.data;
+}
