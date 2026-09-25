@@ -24,7 +24,7 @@ from .model_service import ServiceModele
 from .logging_config import logger
 from .erreurs import enregistrer_gestionnaires
 from . import auth_routes, client_routes, analyse_routes, notification_routes
-from . import reentrainement_routes, chatbot_routes, dashboard_routes, drift_routes
+from . import reentrainement_routes, chatbot_routes, dashboard_routes, drift_routes, monitoring_routes, conversation_routes
 
 app = FastAPI(
     title="API CREDISCORE - BSIC Tchad",
@@ -54,8 +54,10 @@ app.include_router(client_routes.router)
 app.include_router(analyse_routes.router)
 app.include_router(reentrainement_routes.router)
 app.include_router(chatbot_routes.router)
+app.include_router(conversation_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(drift_routes.router)
+app.include_router(monitoring_routes.router)
 app.include_router(notification_routes.router)
 
 # --- Chargement du modele au demarrage (avec gestion d'erreur) ---

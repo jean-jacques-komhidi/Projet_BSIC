@@ -18,8 +18,8 @@ class AnalyseCreation(BaseModel):
 class AnalyseReponse(BaseModel):
     """Representation d'une analyse enregistree, renvoyee par l'API."""
     id: int
-    client_id: int
-    user_id: int
+    client_id: Optional[int] = None
+    user_id: Optional[int] = None
     nom_client: Optional[str] = None
     probabilite_defaut: float
     classe_risque: Optional[str] = None

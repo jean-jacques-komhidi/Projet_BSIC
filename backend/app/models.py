@@ -76,3 +76,30 @@ class Notification(Base):
     type = Column(String(30), default="info")   # info, succes, alerte
     lue = Column(Boolean, default=False)
     date_creation = Column(DateTime, default=datetime.utcnow)
+
+
+class Conversation(Base):
+    """Une conversation avec l'assistant conversationnel."""
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titre = Column(String(200), default="Nouvelle conversation")
+    user_id = Column(Integer, ForeignKey("users.id"))
+    date_creation = Column(DateTime, default=datetime.utcnow)
+    date_maj = Column(DateTime, default=datetime.utcnow)
+
+    messages = relationship("Message", back_populates="conversation",
+                            cascade="all, delete-orphan", order_by="Message.date_creation")
+
+
+class Message(Base):
+    """Un message dans une conversation (question de l'agent ou reponse de l'assistant)."""
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String(20), nullable=False)   # 'user' ou 'assistant'
+    contenu = Column(Text, nullable=False)
+    date_creation = Column(DateTime, default=datetime.utcnow)
+
+    conversation_id = Column(Integer, ForeignKey("conversations.id"))
+    conversation = relationship("Conversation", back_populates="messages")

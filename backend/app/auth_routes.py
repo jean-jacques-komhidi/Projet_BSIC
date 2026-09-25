@@ -20,6 +20,8 @@ au-dela, lister, modifier et supprimer sont reserves a l'administrateur.
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from pydantic import BaseModel
 
 from .database import get_db
 from . import models
@@ -68,6 +70,79 @@ def connexion(
 def mes_informations(utilisateur: models.User = Depends(utilisateur_courant)):
     """Renvoie les informations de l'utilisateur actuellement connecte."""
     return utilisateur
+
+
+@router.put("/moi", response_model=UtilisateurReponse)
+def modifier_mes_informations(
+    donnees: UtilisateurModification,
+    db: Session = Depends(get_db),
+    utilisateur: models.User = Depends(utilisateur_courant),
+):
+    """Permet a l'utilisateur connecte de modifier ses propres informations
+    (nom, e-mail, mot de passe). Le role ne peut pas etre change par soi-meme."""
+    if donnees.nom is not None:
+        utilisateur.nom = donnees.nom
+    if donnees.email is not None:
+        # verifier que le nouvel e-mail n'est pas deja pris par un autre
+        autre = db.query(models.User).filter(
+            models.User.email == donnees.email,
+            models.User.id != utilisateur.id,
+        ).first()
+        if autre:
+            raise HTTPException(status_code=400, detail="Cet e-mail est deja utilise")
+        utilisateur.email = donnees.email
+    if donnees.mot_de_passe is not None:
+        utilisateur.mot_de_passe = hacher_mot_de_passe(donnees.mot_de_passe)
+    # Note : le role n'est volontairement PAS modifiable ici (securite)
+
+    db.commit()
+    db.refresh(utilisateur)
+    return utilisateur
+
+
+# --- Statistiques d'activite de l'utilisateur connecte ---
+@router.get("/moi/statistiques")
+def mes_statistiques(
+    db: Session = Depends(get_db),
+    utilisateur: models.User = Depends(utilisateur_courant),
+):
+    """Renvoie les statistiques d'activite de l'utilisateur connecte."""
+    total = db.query(models.Analyse).filter(
+        models.Analyse.user_id == utilisateur.id).count()
+    accordes = db.query(models.Analyse).filter(
+        models.Analyse.user_id == utilisateur.id,
+        models.Analyse.decision == "ACCORDE").count()
+    refuses = db.query(models.Analyse).filter(
+        models.Analyse.user_id == utilisateur.id,
+        models.Analyse.decision == "REFUSE").count()
+    return {
+        "analyses_realisees": total,
+        "credits_accordes": accordes,
+        "credits_refuses": refuses,
+        "membre_depuis": utilisateur.date_creation.strftime("%d/%m/%Y") if utilisateur.date_creation else None,
+    }
+
+
+# --- Changement de mot de passe securise (avec verification de l'ancien) ---
+class ChangementMotDePasse(BaseModel):
+    ancien_mot_de_passe: str
+    nouveau_mot_de_passe: str
+
+
+@router.put("/moi/mot-de-passe")
+def changer_mot_de_passe(
+    donnees: ChangementMotDePasse,
+    db: Session = Depends(get_db),
+    utilisateur: models.User = Depends(utilisateur_courant),
+):
+    """Change le mot de passe apres verification de l'ancien."""
+    if not verifier_mot_de_passe(donnees.ancien_mot_de_passe, utilisateur.mot_de_passe):
+        raise HTTPException(status_code=400, detail="L'ancien mot de passe est incorrect")
+    if len(donnees.nouveau_mot_de_passe) < 6:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit faire au moins 6 caracteres")
+    utilisateur.mot_de_passe = hacher_mot_de_passe(donnees.nouveau_mot_de_passe)
+    db.commit()
+    return {"message": "Mot de passe modifie avec succes"}
 
 
 # ===========================================================================

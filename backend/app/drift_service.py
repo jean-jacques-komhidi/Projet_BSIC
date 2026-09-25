@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Service de surveillance de la derive des donnees (data drift).
+Service de surveillance de la derive des donnees (data drift), version detaillee.
 
-La derive des donnees survient lorsque les caracteristiques des nouveaux
-dossiers s'eloignent de celles sur lesquelles le modele a ete entraine. Le
-modele devient alors moins fiable, et un reentrainement peut etre necessaire.
+Pour chaque variable surveillee, on compare la distribution des donnees de
+production (les analyses recentes) a celle des donnees de reference (le socle
+d'entrainement). On calcule :
+- la moyenne de reference et la moyenne de production,
+- l'ecart relatif en pourcentage,
+- un z-score (ecart des moyennes rapporte a l'ecart-type de reference),
+- un statut : NORMAL, ALERTE ou CRITIQUE.
 
-Ce module compare, pour quelques variables cles, la distribution des donnees
-recentes (les analyses enregistrees en base) a celle des donnees d'entrainement
-(le socle). Il calcule un indicateur de derive (le PSI, Population Stability
-Index) et signale les variables qui ont significativement derive.
-
-Interpretation du PSI :
-  - < 0,10 : pas de derive significative
-  - 0,10 a 0,25 : derive moderee, a surveiller
-  - > 0,25 : derive importante, reentrainement recommande
+Interpretation du z-score :
+  - z <= 1   : NORMAL (distribution stable)
+  - 1 < z <= 2 : ALERTE (derive moderee)
+  - z > 2    : CRITIQUE (derive significative)
 """
 
 import os
@@ -27,53 +26,57 @@ warnings.filterwarnings("ignore")
 from sqlalchemy.orm import Session
 from . import models
 
-# Variables numeriques cles a surveiller
-VARIABLES_SURVEILLEES = [
-    "AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",
-    "AGE_ANNEES", "ANCIENNETE_EMPLOI_ANNEES",
-    "EXT_SOURCE_2", "EXT_SOURCE_3",
-]
+# Variables surveillees, avec leur libelle lisible
+VARIABLES = {
+    "AMT_INCOME_TOTAL": "Revenu annuel",
+    "AMT_CREDIT": "Montant crédit",
+    "AMT_ANNUITY": "Mensualité",
+    "AGE_ANNEES": "Âge",
+    "ANCIENNETE_EMPLOI_ANNEES": "Ancienneté d'emploi",
+}
 
 CHEMIN_CSV = os.path.join(os.path.dirname(__file__), "..", "notebook", "application_train.csv")
-
-# Nombre minimal d'analyses requis pour un calcul de derive fiable
 MIN_ANALYSES = 30
 
 
-def _psi(reference: np.ndarray, actuel: np.ndarray, n_bins=10) -> float:
-    """Calcule le Population Stability Index entre deux distributions."""
-    # Definir les bornes a partir de la reference
-    bornes = np.quantile(reference, np.linspace(0, 1, n_bins + 1))
-    bornes[0], bornes[-1] = -np.inf, np.inf
-    bornes = np.unique(bornes)
-    if len(bornes) < 3:
-        return 0.0
-
-    ref_pct = np.histogram(reference, bins=bornes)[0] / len(reference)
-    act_pct = np.histogram(actuel, bins=bornes)[0] / len(actuel)
-    # Eviter les zeros
-    ref_pct = np.where(ref_pct == 0, 0.0001, ref_pct)
-    act_pct = np.where(act_pct == 0, 0.0001, act_pct)
-
-    psi = np.sum((act_pct - ref_pct) * np.log(act_pct / ref_pct))
-    return float(psi)
+# Cache du socle de reference (calcule une seule fois, garde en memoire)
+_reference_cache = None
 
 
 def _charger_reference():
-    """Charge un echantillon des donnees d'entrainement (le socle)."""
-    df = pd.read_csv(CHEMIN_CSV)
+    """Charge les donnees d'entrainement (le socle) avec les variables derivees.
+
+    Ne charge que les colonnes necessaires (bien plus rapide que tout le CSV)
+    et met le resultat en cache pour ne pas relire le fichier a chaque appel.
+    """
+    global _reference_cache
+    if _reference_cache is not None:
+        return _reference_cache
+
+    # Ne lire que les colonnes utiles au calcul de derive
+    colonnes = ["DAYS_BIRTH", "DAYS_EMPLOYED", "AMT_INCOME_TOTAL",
+                "AMT_CREDIT", "AMT_ANNUITY"]
+    df = pd.read_csv(CHEMIN_CSV, usecols=colonnes)
     df["AGE_ANNEES"] = (-df["DAYS_BIRTH"] / 365).round(1)
     de = df["DAYS_EMPLOYED"].replace(365243, np.nan)
     df["ANCIENNETE_EMPLOI_ANNEES"] = (-de / 365).round(1)
+
+    # Pre-calculer les moyennes et ecarts-types (ce dont on a besoin)
+    _reference_cache = df
     return df
 
 
-def analyser_derive(db: Session) -> dict:
-    """Compare les analyses recentes de la base au socle d'entrainement.
+def _statut(z):
+    """Determine le statut selon le z-score."""
+    if z <= 1:
+        return "NORMAL"
+    elif z <= 2:
+        return "ALERTE"
+    return "CRITIQUE"
 
-    Renvoie un rapport de derive : le PSI par variable, le niveau de derive,
-    et une recommandation.
-    """
+
+def analyser_derive(db: Session) -> dict:
+    """Compare les analyses recentes au socle et renvoie un rapport detaille."""
     analyses = db.query(models.Analyse).all()
     nb = len(analyses)
 
@@ -85,49 +88,63 @@ def analyser_derive(db: Session) -> dict:
             "nb_analyses": nb,
         }
 
-    # Extraire les donnees des dossiers analyses
+    # Extraire les donnees de production (les dossiers analyses)
     lignes = []
     for a in analyses:
         if a.donnees_dossier:
             lignes.append(json.loads(a.donnees_dossier))
     if not lignes:
-        return {"statut": "insuffisant",
-                "message": "Aucune donnee de dossier exploitable.",
-                "nb_analyses": nb}
+        return {"statut": "insuffisant", "message": "Aucune donnee exploitable.", "nb_analyses": nb}
 
-    df_actuel = pd.DataFrame(lignes)
+    df_prod = pd.DataFrame(lignes)
     df_ref = _charger_reference()
 
-    # Calculer le PSI pour chaque variable surveillee
-    resultats = {}
-    derive_max = 0
-    for var in VARIABLES_SURVEILLEES:
-        if var in df_actuel.columns and var in df_ref.columns:
-            ref = df_ref[var].dropna().values
-            act = df_actuel[var].dropna().astype(float).values
-            if len(act) > 0 and len(ref) > 0:
-                psi = _psi(ref, act)
-                if psi < 0.10:
-                    niveau = "stable"
-                elif psi < 0.25:
-                    niveau = "derive moderee"
-                else:
-                    niveau = "derive importante"
-                resultats[var] = {"psi": round(psi, 4), "niveau": niveau}
-                derive_max = max(derive_max, psi)
+    features = []
+    z_max = 0
+    for var, libelle in VARIABLES.items():
+        if var not in df_prod.columns or var not in df_ref.columns:
+            continue
+        ref = df_ref[var].dropna().astype(float)
+        prod = df_prod[var].dropna().astype(float)
+        if len(ref) == 0 or len(prod) == 0:
+            continue
 
-    # Recommandation globale
-    if derive_max < 0.10:
-        recommandation = "Aucune derive significative. Le modele reste fiable."
-    elif derive_max < 0.25:
-        recommandation = "Derive moderee detectee. A surveiller."
+        ref_mean = float(ref.mean())
+        prod_mean = float(prod.mean())
+        ref_std = float(ref.std()) or 1.0
+
+        # Ecart relatif en %
+        ecart_pct = round(abs(prod_mean - ref_mean) / (abs(ref_mean) or 1) * 100, 1)
+        # Z-score : ecart des moyennes rapporte a l'ecart-type de reference
+        z = round(abs(prod_mean - ref_mean) / ref_std, 2)
+        statut = _statut(z)
+        z_max = max(z_max, z)
+
+        features.append({
+            "feature": libelle,
+            "variable": var,
+            "statut": statut,
+            "ecart_pct": ecart_pct,
+            "z_score": z,
+            "ref_mean": round(ref_mean),
+            "prod_mean": round(prod_mean),
+        })
+
+    # Statut global
+    critique = any(f["statut"] == "CRITIQUE" for f in features)
+    alerte = any(f["statut"] == "ALERTE" for f in features)
+    if critique:
+        recommandation = "Drift critique — Reentrainement recommande !"
+    elif alerte:
+        recommandation = "Derive moderee detectee sur certaines variables."
     else:
-        recommandation = "Derive importante detectee. Reentrainement recommande."
+        recommandation = "Aucune derive detectee — Distribution normale."
 
     return {
         "statut": "ok",
         "nb_analyses": nb,
-        "derive_par_variable": resultats,
-        "derive_maximale": round(derive_max, 4),
+        "total_predictions": nb,
+        "drift_features": features,
+        "z_max": z_max,
         "recommandation": recommandation,
     }
