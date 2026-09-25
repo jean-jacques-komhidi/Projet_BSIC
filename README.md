@@ -344,7 +344,7 @@ Push sur main
 ## Auteur
 
 **KOMHIDI Jean-Jacques**
-Master — IUC / CEFOD Business School
+Master — UCAO
 
 Mémoire : Modélisation prédictive du risque de défaut de paiement de crédit
 dans le secteur bancaire tchadien : apport du Machine Learning au scoring crédit,
@@ -356,4 +356,4 @@ Année : 2025 / 2026
 
 ## Licence
 
-Projet académique — usage pédagogique et démonstratif.
+Projet Master - usage pédagogique et démonstratif.
