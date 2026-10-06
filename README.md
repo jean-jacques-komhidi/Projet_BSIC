@@ -4,7 +4,7 @@
 
 Plateforme MLOps complète de scoring crédit (prédiction du risque de défaut de paiement) développée dans le cadre d'un mémoire de master. Le projet couvre l'intégralité du cycle de vie d'un modèle de Machine Learning : de la préparation des données à l'entraînement, jusqu'au déploiement en production, à l'explicabilité (SHAP), à l'assistant conversationnel (LLM), au réentraînement asynchrone multi-modèles et au monitoring de la dérive des données. Cas d'application : la Banque Sahélo-Saharienne pour l'Investissement et le Commerce (BSIC Tchad).
 
-[![CI/CD](https://github.com/jean-jacques-komhidi/CREDISCORE-BSIC/actions/workflows/ci.yml/badge.svg)](https://github.com/jean-jacques-komhidi/CREDISCORE-BSIC/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/jean-jacques-komhidi/Projet_BSIC/actions/workflows/ci.yml/badge.svg)](https://github.com/jean-jacques-komhidi/Projet_BSIC/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-Vite-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
@@ -393,7 +393,7 @@ Master — UCAO
 - Encadrant : **Chamsedine Aidara**
 - Mémoire : Modélisation prédictive du risque de défaut de paiement de crédit dans le secteur bancaire tchadien : apport du Machine Learning au scoring crédit, cas de la BSIC Tchad.
 - Année : 2025 / 2026
-- GitHub : [jean-jacques-komhidi/CREDISCORE-BSIC](https://github.com/jean-jacques-komhidi/CREDISCORE-BSIC)
+- GitHub : [jean-jacques-komhidi/Projet_BSIC](https://github.com/jean-jacques-komhidi/Projet_BSIC)
 
 ---
 
