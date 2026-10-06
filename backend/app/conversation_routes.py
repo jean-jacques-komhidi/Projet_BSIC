@@ -14,7 +14,7 @@ garde le contexte de la conversation (les messages precedents) pour repondre.
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -114,18 +114,22 @@ def envoyer_message(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation introuvable")
 
-    # Recuperer l'historique des messages precedents (pour le contexte)
+    # Recuperer l'historique des messages precedents (pour le contexte).
+    # On ne garde que les 10 derniers pour limiter la taille du prompt ; cet
+    # historique est fige AVANT d'ajouter la question courante, pour ne pas la
+    # transmettre deux fois au modele de langage.
     historique = [
         {"role": m.role, "contenu": m.contenu}
-        for m in conv.messages
+        for m in conv.messages[-10:]
     ]
+    premier_message = len(conv.messages) == 0
 
     # Enregistrer la question de l'utilisateur
     msg_user = models.Message(role="user", contenu=envoi.question, conversation_id=conv.id)
     db.add(msg_user)
 
     # Si c'est le premier message, definir le titre de la conversation
-    if len(conv.messages) == 0:
+    if premier_message:
         conv.titre = envoi.question[:60] + ("..." if len(envoi.question) > 60 else "")
 
     # Obtenir la reponse de l'assistant avec le contexte de la conversation
@@ -135,7 +139,7 @@ def envoyer_message(
     msg_assistant = models.Message(role="assistant", contenu=texte_reponse, conversation_id=conv.id)
     db.add(msg_assistant)
 
-    conv.date_maj = datetime.utcnow()
+    conv.date_maj = datetime.now(timezone.utc)
     db.commit()
     db.refresh(msg_user)
     db.refresh(msg_assistant)
