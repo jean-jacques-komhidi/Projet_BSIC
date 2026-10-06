@@ -4,6 +4,7 @@
 
 Plateforme MLOps complète de scoring crédit (prédiction du risque de défaut de paiement) développée dans le cadre d'un mémoire de master. Le projet couvre l'intégralité du cycle de vie d'un modèle de Machine Learning : de la préparation des données à l'entraînement, jusqu'au déploiement en production, à l'explicabilité (SHAP), à l'assistant conversationnel (LLM), au réentraînement asynchrone multi-modèles et au monitoring de la dérive des données. Cas d'application : la Banque Sahélo-Saharienne pour l'Investissement et le Commerce (BSIC Tchad).
 
+[![CI/CD](https://github.com/jean-jacques-komhidi/CREDISCORE-BSIC/actions/workflows/ci.yml/badge.svg)](https://github.com/jean-jacques-komhidi/CREDISCORE-BSIC/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-Vite-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
@@ -27,6 +28,7 @@ Plateforme MLOps complète de scoring crédit (prédiction du risque de défaut 
 - [Analyse Data Drift](#analyse-data-drift)
 - [Assistant conversationnel](#assistant-conversationnel)
 - [Fonctionnalités de l'interface](#fonctionnalités-de-linterface)
+- [Aperçu de l'interface](#aperçu-de-linterface)
 - [Installation](#installation)
 - [Pipeline CI/CD](#pipeline-cicd)
 - [Auteur](#auteur)
@@ -39,7 +41,7 @@ Plateforme MLOps complète de scoring crédit (prédiction du risque de défaut 
 |---------|--------|
 | Nature | Mémoire de master — projet MLOps de scoring crédit |
 | Objectif | Prédire le risque de défaut de paiement d'un demandeur de crédit |
-| Institution | IUC — CEFOD Business School |
+| Institution | UCAO |
 | Terrain | BSIC Tchad (secteur bancaire tchadien) |
 | Périmètre | Préparation données → modélisation → API → interface → monitoring |
 | Modèle retenu | Gradient Boosting (AUC-ROC 0,753) |
@@ -174,6 +176,7 @@ Projet_BSIC/
 │   ├── package.json
 │   └── README.md
 │
+├── docs/screenshots/                # Captures d'écran de l'application
 ├── .gitignore
 └── README.md
 ```
@@ -192,6 +195,8 @@ Trois modèles sont entraînés et comparés à chaque cycle. Le pipeline sélec
 
 Le Gradient Boosting obtient la meilleure performance, à la fois en AUC et en coût métier. Il est sélectionné et déployé en production.
 
+> Après réentraînement sur les données réelles réinjectées via la boucle MLOps (issue réelle des crédits renseignée par l'agent), l'AUC-ROC du Gradient Boosting en production atteint **0,7553**. Le chiffre de référence du projet reste 0,753, mesuré sur l'entraînement initial des trois modèles.
+
 ---
 
 ## Score métier
@@ -205,7 +210,7 @@ Dans le contexte du scoring crédit, les deux types d'erreurs n'ont pas le même
 
 **Formule** : `Coût = (5 × FN) + (1 × FP)` — à minimiser.
 
-**Seuil de décision** : 0,70, calculé pour minimiser le coût métier, reflétant le fait qu'un défaut de remboursement coûte cinq fois plus cher qu'une opportunité manquée.
+**Seuil de décision** : 0,70, calculé pour minimiser le coût métier, reflétant le fait qu'un défaut de remboursement coûte cinq fois plus cher qu'une opportunité manquée. Dans l'interface, la jauge de risque classe le score en Faible (< 40 %), Moyen (40-70 %) et Élevé (> 70 %).
 
 ---
 
@@ -271,6 +276,45 @@ Pour chaque variable surveillée (revenu, montant du crédit, mensualité, âge,
 | Utilisateurs | CRUD des comptes et rôles (admin) |
 | Monitoring | MLflow, réentraînement temps réel, data drift détaillé (admin) |
 | Profil | Informations, statistiques d'activité, changement de mot de passe |
+
+---
+
+## Aperçu de l'interface
+
+<table>
+<tr>
+<td width="50%"><b>Connexion</b><br><img src="docs/screenshots/01_connexion.png" alt="Connexion"></td>
+<td width="50%"><b>Tableau de bord — KPI et graphiques</b><br><img src="docs/screenshots/02_tableau_de_bord.png" alt="Tableau de bord"></td>
+</tr>
+<tr>
+<td><b>Analyse — jauge de risque et SHAP</b><br><img src="docs/screenshots/03_analyse.png" alt="Analyse"></td>
+<td><b>Fiche de décision (PDF)</b><br><img src="docs/screenshots/04_fiche_pdf.png" alt="Fiche PDF"></td>
+</tr>
+<tr>
+<td><b>Clients — gestion CRUD</b><br><img src="docs/screenshots/05_clients.png" alt="Clients"></td>
+<td><b>Historique des analyses</b><br><img src="docs/screenshots/06_historique.png" alt="Historique"></td>
+</tr>
+<tr>
+<td><b>Assistant conversationnel — CrediBot</b><br><img src="docs/screenshots/07_credibot.png" alt="CrediBot"></td>
+<td><b>Notifications système</b><br><img src="docs/screenshots/08_notifications.png" alt="Notifications"></td>
+</tr>
+<tr>
+<td><b>Utilisateurs (administration)</b><br><img src="docs/screenshots/09_utilisateurs.png" alt="Utilisateurs"></td>
+<td><b>Monitoring — MLflow et réentraînement</b><br><img src="docs/screenshots/10_monitoring.png" alt="Monitoring"></td>
+</tr>
+<tr>
+<td><b>Data Drift détaillé (z-score)</b><br><img src="docs/screenshots/11_data_drift.png" alt="Data Drift"></td>
+<td><b>Profil utilisateur</b><br><img src="docs/screenshots/12_profil.png" alt="Profil"></td>
+</tr>
+<tr>
+<td><b>Schéma de la base de données (PostgreSQL)</b><br><img src="docs/screenshots/13_schema_bdd.png" alt="Schéma BDD"></td>
+<td><b>Intégration continue (GitHub Actions)</b><br><img src="docs/screenshots/14_ci_github_actions.png" alt="CI GitHub Actions"></td>
+</tr>
+<tr>
+<td><b>Suivi d'expériences (MLflow)</b><br><img src="docs/screenshots/15_mlflow_ui.png" alt="MLflow UI"></td>
+<td></td>
+</tr>
+</table>
 
 ---
 
@@ -346,11 +390,10 @@ Push sur main
 **KOMHIDI Jean-Jacques**
 Master — UCAO
 
-Mémoire : Modélisation prédictive du risque de défaut de paiement de crédit
-dans le secteur bancaire tchadien : apport du Machine Learning au scoring crédit,
-cas de la BSIC Tchad.
-
-Année : 2025 / 2026
+- Encadrant : **Chamsedine Aidara**
+- Mémoire : Modélisation prédictive du risque de défaut de paiement de crédit dans le secteur bancaire tchadien : apport du Machine Learning au scoring crédit, cas de la BSIC Tchad.
+- Année : 2025 / 2026
+- GitHub : [jean-jacques-komhidi/CREDISCORE-BSIC](https://github.com/jean-jacques-komhidi/CREDISCORE-BSIC)
 
 ---
 
