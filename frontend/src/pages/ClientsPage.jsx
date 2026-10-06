@@ -9,7 +9,21 @@ import {
   Users, Search, Plus, Pencil, Trash2, X, Loader2,
 } from "lucide-react";
 
-const SITUATIONS = ["Married", "Single / not married", "Widow", "Separated"];
+// Les VALEURS restent en anglais (attendues par le modèle / stockées en base),
+// seuls les LIBELLÉS affichés sont en français.
+const SITUATIONS = [
+  { valeur: "Married", label: "Marié(e)" },
+  { valeur: "Single / not married", label: "Célibataire" },
+  { valeur: "Widow", label: "Veuf(ve)" },
+  { valeur: "Separated", label: "Séparé(e) / divorcé(e)" },
+  { valeur: "Civil marriage", label: "Union libre" },
+];
+
+// Traduit une valeur stockée (anglais) en libellé français pour l'affichage.
+const labelSituation = (valeur) => {
+  const s = SITUATIONS.find((x) => x.valeur === valeur);
+  return s ? s.label : (valeur || "—");
+};
 
 export default function ClientsPage() {
   const { isDark } = useTheme();
@@ -133,7 +147,7 @@ export default function ClientsPage() {
                     <td className={cellClass + " text-center"}>{c.genre || "—"}</td>
                     <td className={cellClass + " text-center"}>{c.age ? Math.round(c.age) + " ans" : "—"}</td>
                     <td className={cellClass}>{c.profession || "—"}</td>
-                    <td className={cellClass}>{c.situation_familiale || "—"}</td>
+                    <td className={cellClass}>{labelSituation(c.situation_familiale)}</td>
                     <td className="py-3 text-right pr-4 lg:pr-5">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => ouvrirModification(c)}
@@ -243,7 +257,7 @@ function ModaleClient({ client, isDark, onFermer, onSauvegarde }) {
           <div>
             <label className={labelClass}>Situation familiale</label>
             <select value={form.situation_familiale} onChange={(e) => maj("situation_familiale", e.target.value)} className={inputClass}>
-              {SITUATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              {SITUATIONS.map((s) => <option key={s.valeur} value={s.valeur}>{s.label}</option>)}
             </select>
           </div>
 

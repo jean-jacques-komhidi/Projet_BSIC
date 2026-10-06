@@ -68,6 +68,14 @@ export default function MonitoringPage() {
   const hasCritical = features.some((f) => f.statut === "CRITIQUE");
   const hasAlert = features.some((f) => f.statut === "ALERTE");
 
+  // Libellé + couleur du statut global de dérive
+  const statutGlobal = hasCritical ? "CRITIQUE" : hasAlert ? "ALERTE" : driftOk ? "NORMAL" : "—";
+  const couleurGlobale = hasCritical
+    ? (isDark ? "text-red-400" : "text-red-600")
+    : hasAlert
+      ? (isDark ? "text-amber-400" : "text-amber-600")
+      : (isDark ? "text-emerald-400" : "text-emerald-600");
+
   function cfgStatut(statut) {
     if (statut === "CRITIQUE") return { Icone: XCircle, couleur: "#c0392b", barre: "#c0392b",
       classe: isDark ? "text-red-400 border-red-900" : "text-red-600 border-red-200" };
@@ -75,6 +83,49 @@ export default function MonitoringPage() {
       classe: isDark ? "text-amber-400 border-amber-900" : "text-amber-600 border-amber-200" };
     return { Icone: CheckCircle2, couleur: "#0F6E56", barre: "#0F6E56",
       classe: isDark ? "text-emerald-400 border-emerald-900" : "text-emerald-600 border-emerald-200" };
+  }
+
+  // --- Sous-composant : une variable de dérive (réutilisé dans la grille) ---
+  function CarteDrift({ f }) {
+    const { Icone, couleur, barre, classe } = cfgStatut(f.statut);
+    const niveauTexte = f.z_score <= 1 ? "Distribution normale" : f.z_score <= 2 ? "Dérive modérée" : "Dérive significative";
+    const unite = uniteVariable(f.variable);
+    return (
+      <div className={cardClass + " p-4"}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className={"w-7 h-7 rounded-lg border flex items-center justify-center " + classe}>
+              <Icone size={13} />
+            </div>
+            <p className={"text-sm font-medium " + (isDark ? "text-white" : "text-gray-800")}>{f.feature}</p>
+          </div>
+          <span className={"text-xs px-2 py-0.5 rounded-full border font-medium " + classe}>{f.statut}</span>
+        </div>
+        <div className="mb-3">
+          <div className="flex justify-between items-center text-xs mb-1">
+            <span className={isDark ? "text-zinc-500" : "text-gray-400"}>Écart</span>
+            <div className="flex items-center gap-2">
+              <span className={"text-xs px-1.5 py-0.5 rounded border font-medium " + classe}>Z={f.z_score}</span>
+              <span className="font-medium" style={{ color: couleur }}>{f.ecart_pct}%</span>
+            </div>
+          </div>
+          <div className={"w-full h-1.5 rounded-full " + (isDark ? "bg-zinc-800" : "bg-gray-100")}>
+            <div className="h-1.5 rounded-full transition-all duration-700" style={{ width: Math.min(f.ecart_pct, 100) + "%", backgroundColor: barre }} />
+          </div>
+          <p className={"text-xs mt-1 " + (isDark ? "text-zinc-600" : "text-gray-400")}>{niveauTexte}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className={"rounded-lg p-2.5 " + (isDark ? "bg-zinc-800/50" : "bg-gray-50")}>
+            <p className={"text-xs mb-0.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>Référence</p>
+            <p className={"text-xs font-semibold " + (isDark ? "text-zinc-200" : "text-gray-700")}>{fmt(f.ref_mean)} {unite}</p>
+          </div>
+          <div className={"rounded-lg p-2.5 " + (isDark ? "bg-zinc-800/50" : "bg-gray-50")}>
+            <p className={"text-xs mb-0.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>Production</p>
+            <p className={"text-xs font-semibold " + (isDark ? "text-zinc-200" : "text-gray-700")}>{fmt(f.prod_mean)} {unite}</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -193,135 +244,108 @@ export default function MonitoringPage() {
         </div>
         <div className={cardClass + " p-4"}>
           <p className={"text-xs mb-1 " + (isDark ? "text-zinc-500" : "text-gray-400")}>Statut dérive</p>
-          <p className={"text-xl font-bold " +
-            (hasCritical ? (isDark ? "text-red-400" : "text-red-600") : hasAlert ? (isDark ? "text-amber-400" : "text-amber-600") : (isDark ? "text-emerald-400" : "text-emerald-600"))}>
-            {hasCritical ? "CRITIQUE" : hasAlert ? "ALERTE" : driftOk ? "NORMAL" : "—"}
-          </p>
+          <p className={"text-xl font-bold " + couleurGlobale}>{statutGlobal}</p>
           <p className={"text-xs mt-0.5 " + (isDark ? "text-zinc-600" : "text-gray-400")}>{features.length} variables</p>
         </div>
       </div>
 
-      {/* Grille MLflow + Drift détaillé */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* MLflow */}
-        <div>
-          <p className={"mb-3 " + headClass}>Expériences MLflow</p>
-          <div className={cardClass}>
-            {runs.length === 0 ? (
-              <div className="text-center py-12">
-                <Activity size={26} className={"mx-auto mb-3 " + (isDark ? "text-zinc-700" : "text-gray-300")} />
-                <p className={"text-sm " + (isDark ? "text-zinc-500" : "text-gray-400")}>Aucun run MLflow</p>
-                <p className={"text-xs mt-1 " + (isDark ? "text-zinc-600" : "text-gray-400")}>Lancez le serveur MLflow (port 5000)</p>
-              </div>
-            ) : (
-              <div>
-                {bestRun && (
-                  <div className={"p-4 border-b " + borderB}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Award size={13} className={isDark ? "text-amber-400" : "text-amber-500"} />
-                      <p className={"text-xs font-medium " + (isDark ? "text-zinc-400" : "text-gray-500")}>Meilleur modèle en production</p>
-                    </div>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className={"font-semibold text-sm " + (isDark ? "text-white" : "text-gray-800")}>{bestRun.modele}</p>
-                        <p className={"text-xs mt-0.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>ID : {bestRun.run_id} · terminé</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={"text-lg font-bold " + (isDark ? "text-white" : "text-gray-800")}>{bestRun.auc_roc}</p>
-                        <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>AUC-ROC</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-85">
-                    <thead>
-                      <tr className={"border-b " + borderB}>
-                        <th className={"text-left py-2.5 px-4 " + headClass}>Modèle</th>
-                        <th className={"text-center py-2.5 " + headClass}>AUC</th>
-                        <th className={"text-center py-2.5 pr-4 " + headClass}>Coût</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {runs.map((run, i) => (
-                        <tr key={run.run_id + i} className={"border-t " + (isDark ? "border-zinc-800/50" : "border-gray-50")}>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <span className={"text-xs font-medium " + (isDark ? "text-zinc-200" : "text-gray-700")}>{run.modele}</span>
-                              {i === 0 && <span className={"text-xs px-1.5 py-0.5 rounded border font-medium " + (isDark ? "border-amber-900 text-amber-400" : "border-amber-200 text-amber-600")}>Best</span>}
-                            </div>
-                          </td>
-                          <td className={"py-3 text-center text-xs font-semibold " + (i === 0 ? (isDark ? "text-emerald-400" : "text-emerald-600") : (isDark ? "text-zinc-300" : "text-gray-600"))}>{run.auc_roc}</td>
-                          <td className={"py-3 text-center text-xs pr-4 " + (isDark ? "text-zinc-400" : "text-gray-500")}>{fmt(run.score_metier)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* ============ OPTION B ============ */}
 
-        {/* Drift détaillé */}
-        <div>
-          <p className={"mb-3 " + headClass}>Analyse du Data Drift</p>
-          <div className={cardClass}>
-            {loading && !drift ? (
-              <div className="text-center py-12"><Loader2 size={24} className={"animate-spin mx-auto " + (isDark ? "text-zinc-600" : "text-gray-300")} /></div>
-            ) : !driftOk ? (
-              <div className="text-center py-12">
-                <Database size={26} className={"mx-auto mb-3 " + (isDark ? "text-zinc-700" : "text-gray-300")} />
-                <p className={"text-sm " + (isDark ? "text-zinc-500" : "text-gray-400")}>{drift?.message || "Données insuffisantes"}</p>
-              </div>
-            ) : (
-              <div>
-                {features.map((f, i) => {
-                  const { Icone, couleur, barre, classe } = cfgStatut(f.statut);
-                  const isLast = i === features.length - 1;
-                  const niveauTexte = f.z_score <= 1 ? "Distribution normale" : f.z_score <= 2 ? "Dérive modérée" : "Dérive significative";
-                  const unite = uniteVariable(f.variable);
-                  return (
-                    <div key={f.variable} className={"p-4 " + (!isLast ? "border-b " + borderB : "")}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className={"w-7 h-7 rounded-lg border flex items-center justify-center " + classe}>
-                            <Icone size={13} />
-                          </div>
-                          <p className={"text-sm font-medium " + (isDark ? "text-white" : "text-gray-800")}>{f.feature}</p>
-                        </div>
-                        <span className={"text-xs px-2 py-0.5 rounded-full border font-medium " + classe}>{f.statut}</span>
-                      </div>
-                      <div className="mb-3">
-                        <div className="flex justify-between items-center text-xs mb-1">
-                          <span className={isDark ? "text-zinc-500" : "text-gray-400"}>Écart</span>
-                          <div className="flex items-center gap-2">
-                            <span className={"text-xs px-1.5 py-0.5 rounded border font-medium " + classe}>Z={f.z_score}</span>
-                            <span className="font-medium" style={{ color: couleur }}>{f.ecart_pct}%</span>
-                          </div>
-                        </div>
-                        <div className={"w-full h-1.5 rounded-full " + (isDark ? "bg-zinc-800" : "bg-gray-100")}>
-                          <div className="h-1.5 rounded-full transition-all duration-700" style={{ width: Math.min(f.ecart_pct, 100) + "%", backgroundColor: barre }} />
-                        </div>
-                        <p className={"text-xs mt-1 " + (isDark ? "text-zinc-600" : "text-gray-400")}>{niveauTexte}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className={"rounded-lg p-2.5 " + (isDark ? "bg-zinc-800/50" : "bg-gray-50")}>
-                          <p className={"text-xs mb-0.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>Référence</p>
-                          <p className={"text-xs font-semibold " + (isDark ? "text-zinc-200" : "text-gray-700")}>{fmt(f.ref_mean)} {unite}</p>
-                        </div>
-                        <div className={"rounded-lg p-2.5 " + (isDark ? "bg-zinc-800/50" : "bg-gray-50")}>
-                          <p className={"text-xs mb-0.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>Production</p>
-                          <p className={"text-xs font-semibold " + (isDark ? "text-zinc-200" : "text-gray-700")}>{fmt(f.prod_mean)} {unite}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+      {/* Rangée de résumés courts : MLflow + Drift */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+        {/* Résumé MLflow */}
+        <div className={cardClass + " p-4 flex items-center justify-between"}>
+          <div className="flex items-center gap-2.5">
+            <div className={"w-9 h-9 rounded-lg flex items-center justify-center " + (isDark ? "bg-zinc-800" : "bg-gray-100")}>
+              <Award size={16} className={isDark ? "text-amber-400" : "text-amber-500"} />
+            </div>
+            <div>
+              <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>Meilleur modèle en production</p>
+              <p className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>{bestRun?.modele || "—"}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className={"text-lg font-bold " + (isDark ? "text-white" : "text-gray-800")}>{bestRun?.auc_roc || "—"}</p>
+            <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>AUC-ROC</p>
           </div>
         </div>
+        {/* Résumé Drift */}
+        <div className={cardClass + " p-4 flex items-center justify-between"}>
+          <div className="flex items-center gap-2.5">
+            <div className={"w-9 h-9 rounded-lg flex items-center justify-center " + (isDark ? "bg-zinc-800" : "bg-gray-100")}>
+              <Activity size={16} className={isDark ? "text-zinc-400" : "text-gray-500"} />
+            </div>
+            <div>
+              <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>Statut global de la dérive</p>
+              <p className={"text-sm font-semibold " + couleurGlobale}>{statutGlobal}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className={"text-lg font-bold " + (isDark ? "text-white" : "text-gray-800")}>{features.length}</p>
+            <p className={"text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>variables suivies</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Détail des runs MLflow — pleine largeur */}
+      <div className="mb-6">
+        <p className={"mb-3 " + headClass}>Détail des runs MLflow</p>
+        <div className={cardClass}>
+          {runs.length === 0 ? (
+            <div className="text-center py-12">
+              <Activity size={26} className={"mx-auto mb-3 " + (isDark ? "text-zinc-700" : "text-gray-300")} />
+              <p className={"text-sm " + (isDark ? "text-zinc-500" : "text-gray-400")}>Aucun run MLflow</p>
+              <p className={"text-xs mt-1 " + (isDark ? "text-zinc-600" : "text-gray-400")}>Lancez le serveur MLflow (port 5000)</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-120">
+                <thead>
+                  <tr className={"border-b " + borderB}>
+                    <th className={"text-left py-2.5 px-4 " + headClass}>Modèle</th>
+                    <th className={"text-left py-2.5 " + headClass}>ID du run</th>
+                    <th className={"text-center py-2.5 " + headClass}>AUC-ROC</th>
+                    <th className={"text-center py-2.5 pr-4 " + headClass}>Coût métier</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.map((run, i) => (
+                    <tr key={run.run_id + i} className={"border-t " + (isDark ? "border-zinc-800/50" : "border-gray-50")}>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className={"text-xs font-medium " + (isDark ? "text-zinc-200" : "text-gray-700")}>{run.modele}</span>
+                          {i === 0 && <span className={"text-xs px-1.5 py-0.5 rounded border font-medium " + (isDark ? "border-amber-900 text-amber-400" : "border-amber-200 text-amber-600")}>Best</span>}
+                        </div>
+                      </td>
+                      <td className={"py-3 text-xs " + (isDark ? "text-zinc-500" : "text-gray-400")}>{run.run_id}</td>
+                      <td className={"py-3 text-center text-xs font-semibold " + (i === 0 ? (isDark ? "text-emerald-400" : "text-emerald-600") : (isDark ? "text-zinc-300" : "text-gray-600"))}>{run.auc_roc}</td>
+                      <td className={"py-3 text-center text-xs pr-4 " + (isDark ? "text-zinc-400" : "text-gray-500")}>{fmt(run.score_metier)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Analyse du Data Drift — pleine largeur, grille de cartes */}
+      <div>
+        <p className={"mb-3 " + headClass}>Analyse du Data Drift</p>
+        {loading && !drift ? (
+          <div className={cardClass + " text-center py-12"}>
+            <Loader2 size={24} className={"animate-spin mx-auto " + (isDark ? "text-zinc-600" : "text-gray-300")} />
+          </div>
+        ) : !driftOk ? (
+          <div className={cardClass + " text-center py-12"}>
+            <Database size={26} className={"mx-auto mb-3 " + (isDark ? "text-zinc-700" : "text-gray-300")} />
+            <p className={"text-sm " + (isDark ? "text-zinc-500" : "text-gray-400")}>{drift?.message || "Données insuffisantes"}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {features.map((f) => <CarteDrift key={f.variable} f={f} />)}
+          </div>
+        )}
       </div>
     </div>
   );
