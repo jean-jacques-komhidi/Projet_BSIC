@@ -6,7 +6,8 @@
 #   2. crediscore-api       : API FastAPI (dossier backend/)
 #   3. crediscore-frontend  : interface React/Vite (dossier frontend/)
 # Les adresses de l'API et du frontend sont reliees automatiquement.
-# Seule GROQ_API_KEY (chatbot) est demandee a la creation.
+# Render demande a la creation : GROQ_API_KEY (chatbot), ADMIN_EMAIL et
+# ADMIN_PASSWORD (premier administrateur).
 # ===========================================================================
 
 databases:
@@ -23,8 +24,9 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install --upgrade pip && pip install -r requirements-prod.txt
-    # init_db cree les tables si elles n'existent pas (sans effet sinon)
-    startCommand: python -m app.init_db && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # init_db cree les tables si elles n'existent pas (sans effet sinon) ;
+    # creer_admin cree le premier administrateur (sans effet s'il en existe un)
+    startCommand: python -m app.init_db && python -m app.creer_admin && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
@@ -36,6 +38,11 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: GROQ_API_KEY
+        sync: false
+      # Premier administrateur : saisis dans Render, jamais dans le depot
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
         sync: false
       - key: CORS_ORIGINS
         fromService:
