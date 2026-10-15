@@ -28,6 +28,13 @@ load_dotenv()
 
 # --- Configuration ---
 SECRET_KEY = os.getenv("SECRET_KEY", "cle_par_defaut_a_changer")
+# En production, la cle par defaut (publique sur GitHub) permettrait a
+# n'importe qui de fabriquer des jetons : l'API refuse alors de demarrer.
+# Render definit automatiquement la variable RENDER.
+if SECRET_KEY == "cle_par_defaut_a_changer" and (
+    os.getenv("RENDER") or os.getenv("ENVIRONNEMENT") == "production"
+):
+    raise RuntimeError("SECRET_KEY doit etre definie en production.")
 ALGORITHME = "HS256"                     # algorithme de signature des jetons
 DUREE_JETON_MINUTES = 60 * 8             # le jeton reste valide 8 heures
 

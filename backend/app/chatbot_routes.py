@@ -41,5 +41,5 @@ def poser_question(
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
     """Pose une question a l'assistant conversationnel."""
-    texte = repondre(db, q.question, q.analyse_id)
+    texte = repondre(db, q.question, q.analyse_id, utilisateur=utilisateur)
     return {"reponse": texte}

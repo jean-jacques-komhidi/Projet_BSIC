@@ -13,8 +13,9 @@ Regroupe :
     - PUT    /auth/utilisateurs/{id}   : modifier un utilisateur (Update)
     - DELETE /auth/utilisateurs/{id}   : supprimer un utilisateur (Delete)
 
-La creation du tout premier utilisateur est libre (pour amorcer le systeme) ;
-au-dela, lister, modifier et supprimer sont reserves a l'administrateur.
+Toute la gestion des utilisateurs (creer, lister, modifier, supprimer) est
+reservee a l'administrateur. Le tout premier administrateur est cree par le
+script app/creer_admin.py, jamais par une route publique.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -151,12 +152,15 @@ def changer_mot_de_passe(
 
 # --- CREATE : creer un utilisateur ---
 @router.post("/utilisateurs", response_model=UtilisateurReponse, status_code=201)
-def creer_utilisateur(donnees: UtilisateurCreation, db: Session = Depends(get_db)):
-    """Cree un nouvel utilisateur.
+def creer_utilisateur(
+    donnees: UtilisateurCreation,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(administrateur_courant),
+):
+    """Cree un nouvel utilisateur. Reserve a l'administrateur.
 
     Verifie que l'e-mail est libre, hache le mot de passe, puis enregistre.
-    La creation reste ouverte pour permettre d'amorcer le premier compte ;
-    dans une version ulterieure, on pourra la reserver a l'administrateur.
+    Le premier administrateur est cree par app/creer_admin.py.
     """
     existant = db.query(models.User).filter(models.User.email == donnees.email).first()
     if existant:
@@ -231,6 +235,15 @@ def modifier_utilisateur(
     if donnees.role is not None:
         if donnees.role not in ("agent", "admin"):
             raise HTTPException(status_code=400, detail="Role invalide")
+        # Ne jamais retrograder le dernier administrateur (sinon plus personne
+        # ne pourrait gerer les comptes)
+        if utilisateur.role == "admin" and donnees.role != "admin":
+            nb_admins = db.query(models.User).filter(models.User.role == "admin").count()
+            if nb_admins <= 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Impossible de retrograder le dernier administrateur",
+                )
         utilisateur.role = donnees.role
     if donnees.mot_de_passe is not None:
         utilisateur.mot_de_passe = hacher_mot_de_passe(donnees.mot_de_passe)

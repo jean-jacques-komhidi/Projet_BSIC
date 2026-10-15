@@ -6,6 +6,8 @@ Routes de gestion des conversations avec l'assistant.
   - POST   /conversations              : creer une nouvelle conversation
   - GET    /conversations/{id}         : lire une conversation (avec ses messages)
   - POST   /conversations/{id}/message : envoyer un message et obtenir la reponse
+  - POST   /conversations/{id}/message/flux : idem, mais la reponse arrive
+                                         progressivement (streaming)
   - DELETE /conversations/{id}         : supprimer une conversation
 
 Chaque conversation appartient a l'utilisateur qui l'a creee. L'assistant
@@ -16,12 +18,13 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from .database import get_db
+from .database import get_db, SessionLocal
 from . import models
 from .security import utilisateur_courant
-from .chatbot_service import repondre
+from .chatbot_service import repondre, preparer_requete, repondre_en_flux
 
 router = APIRouter(prefix="/conversations", tags=["Assistant - Conversations"])
 
@@ -133,7 +136,8 @@ def envoyer_message(
         conv.titre = envoi.question[:60] + ("..." if len(envoi.question) > 60 else "")
 
     # Obtenir la reponse de l'assistant avec le contexte de la conversation
-    texte_reponse = repondre(db, envoi.question, envoi.analyse_id, historique=historique)
+    texte_reponse = repondre(db, envoi.question, envoi.analyse_id,
+                             historique=historique, utilisateur=utilisateur)
 
     # Enregistrer la reponse
     msg_assistant = models.Message(role="assistant", contenu=texte_reponse, conversation_id=conv.id)
@@ -148,6 +152,68 @@ def envoyer_message(
         "question": {"role": "user", "contenu": envoi.question},
         "reponse": {"role": "assistant", "contenu": texte_reponse},
     }
+
+
+# --- POST : envoyer un message, reponse progressive (streaming) ---
+@router.post("/{conv_id}/message/flux")
+def envoyer_message_flux(
+    conv_id: int,
+    envoi: QuestionEnvoi,
+    db: Session = Depends(get_db),
+    utilisateur: models.User = Depends(utilisateur_courant),
+):
+    """Comme /message, mais la reponse est envoyee au fur et a mesure qu'elle
+    est generee (texte brut, morceau par morceau), comme dans ChatGPT.
+    La reponse complete est enregistree a la fin du flux."""
+    conv = db.query(models.Conversation).filter(
+        models.Conversation.id == conv_id,
+        models.Conversation.user_id == utilisateur.id,
+    ).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    historique = [{"role": m.role, "contenu": m.contenu} for m in conv.messages[-10:]]
+    premier_message = len(conv.messages) == 0
+
+    # La question est enregistree tout de suite
+    db.add(models.Message(role="user", contenu=envoi.question, conversation_id=conv.id))
+    if premier_message:
+        conv.titre = envoi.question[:60] + ("..." if len(envoi.question) > 60 else "")
+    conv.date_maj = datetime.now(timezone.utc)
+    db.commit()
+
+    # Le contexte est prepare AVANT le flux, avec la session de la requete
+    liste_messages, ps, erreur = preparer_requete(
+        db, envoi.question, envoi.analyse_id, historique=historique, utilisateur=utilisateur)
+
+    def generer():
+        morceaux = []
+        if erreur:
+            morceaux.append(erreur)
+            yield erreur
+        else:
+            for morceau in repondre_en_flux(liste_messages, ps):
+                morceaux.append(morceau)
+                yield morceau
+        # Fin du flux : on enregistre la reponse complete. Session dediee, car
+        # celle de la requete peut deja etre fermee pendant le streaming.
+        session = SessionLocal()
+        try:
+            session.add(models.Message(role="assistant", contenu="".join(morceaux).strip(),
+                                       conversation_id=conv_id))
+            c = session.query(models.Conversation).filter(models.Conversation.id == conv_id).first()
+            if c:
+                c.date_maj = datetime.now(timezone.utc)
+            session.commit()
+        finally:
+            session.close()
+
+    return StreamingResponse(
+        generer(),
+        media_type="text/plain; charset=utf-8",
+        # Empeche les proxys (Render, Nginx) de retenir le flux jusqu'a la fin
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # --- DELETE : supprimer une conversation ---

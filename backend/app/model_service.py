@@ -18,7 +18,8 @@ warnings.filterwarnings("ignore")
 
 from .explication import generer_explication
 
-SEUIL_DECISION = 0.70
+SEUIL_DECISION = 0.70        # au-dela : credit refuse, risque "eleve"
+SEUIL_RISQUE_FAIBLE = 0.40   # en dessous : risque "faible" (entre les deux : "moyen")
 
 CHEMIN_MODELE = os.path.join(
     os.path.dirname(__file__), "..", "models", "modele_credistore.pkl"
@@ -56,7 +57,7 @@ class ServiceModele:
         return float(self.pipeline.predict_proba(X)[0, 1])
 
     def classe_risque(self, proba: float) -> str:
-        if proba < 0.40:
+        if proba < SEUIL_RISQUE_FAIBLE:
             return "faible"
         elif proba < SEUIL_DECISION:
             return "moyen"

@@ -7,7 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   getConversations, creerConversation, getConversation,
-  envoyerMessage, supprimerConversation,
+  envoyerMessageFlux, supprimerConversation,
 } from "../services/chatbotService";
 import {
   Send, Sparkles, Plus, Trash2, MessageSquare, Menu, Loader2, Search, FileSearch,
@@ -56,7 +56,11 @@ export default function AssistantPage() {
     try { setConversations(await getConversations()); } catch {}
   }
   useEffect(() => { chargerListe(); }, []);
-  useEffect(() => { finRef.current?.scrollIntoView({ behavior: "smooth" }); }, [convActive?.messages, chargement]);
+  // Défilement vers le bas : instantané pendant l'écriture (sinon l'animation
+  // saccade à chaque morceau reçu), fluide le reste du temps.
+  useEffect(() => {
+    finRef.current?.scrollIntoView({ behavior: chargement ? "auto" : "smooth" });
+  }, [convActive?.messages, chargement]);
 
   // Si on arrive avec ?analyse=ID, ouvrir une conversation contextuelle sur ce dossier
   useEffect(() => {
@@ -97,19 +101,32 @@ export default function AssistantPage() {
     } catch {}
   }
 
+  // Ajoute une bulle CrediBot vide, puis la remplit au fur et à mesure que la
+  // réponse arrive (streaming), comme dans ChatGPT ou Claude.
+  async function repondreEnFlux(convId, texte, analyseId) {
+    const majReponse = (contenu, enCours) => setConvActive((c) => {
+      const msgs = [...c.messages];
+      msgs[msgs.length - 1] = { role: "assistant", contenu, enCours };
+      return { ...c, messages: msgs };
+    });
+    setConvActive((c) => ({ ...c, messages: [...c.messages, { role: "assistant", contenu: "", enCours: true }] }));
+    try {
+      const final = await envoyerMessageFlux(convId, texte, analyseId, (t) => majReponse(t, true));
+      majReponse(final.trim() || "Désolé, aucune réponse n'a été reçue.", false);
+      chargerListe();
+    } catch {
+      majReponse("Désolé, une erreur est survenue.", false);
+    }
+  }
+
   // Envoi avec une analyse liée (mode RAG), utilisé au démarrage contextuel
   async function envoyerAvecAnalyse(question, convId, analyseId) {
     const texte = question.trim();
     if (!texte) return;
     setChargement(true);
     setConvActive((c) => ({ ...c, messages: [...(c?.messages || []), { role: "user", contenu: texte }] }));
-    try {
-      const res = await envoyerMessage(convId, texte, analyseId);
-      setConvActive((c) => ({ ...c, messages: [...c.messages, res.reponse] }));
-      chargerListe();
-    } catch {
-      setConvActive((c) => ({ ...c, messages: [...c.messages, { role: "assistant", contenu: "Désolé, une erreur est survenue." }] }));
-    } finally { setChargement(false); }
+    try { await repondreEnFlux(convId, texte, analyseId); }
+    finally { setChargement(false); }
   }
 
   async function envoyer(question) {
@@ -123,13 +140,8 @@ export default function AssistantPage() {
     const messagesAvant = [...(conv.messages || []), { role: "user", contenu: texte }];
     setConvActive({ ...conv, messages: messagesAvant });
     setSaisie(""); setChargement(true);
-    try {
-      const res = await envoyerMessage(conv.id, texte, analyseLiee);
-      setConvActive((c) => ({ ...c, messages: [...messagesAvant, res.reponse] }));
-      chargerListe();
-    } catch {
-      setConvActive((c) => ({ ...c, messages: [...messagesAvant, { role: "assistant", contenu: "Désolé, une erreur est survenue." }] }));
-    } finally { setChargement(false); }
+    try { await repondreEnFlux(conv.id, texte, analyseLiee); }
+    finally { setChargement(false); }
   }
   function gererTouche(e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); envoyer(); }
@@ -271,14 +283,6 @@ export default function AssistantPage() {
               <div className="flex-1 overflow-y-auto">
                 <div className="max-w-2xl mx-auto py-6 px-4 space-y-6">
                   {messages.map((msg, i) => <MessageClaude key={i} msg={msg} isDark={isDark} />)}
-                  {chargement && (
-                    <div className="flex gap-3">
-                      <div className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#2E86C11a" }}>
-                        <Sparkles size={15} style={{ color: "#2E86C1" }} />
-                      </div>
-                      <Loader2 size={18} className="animate-spin mt-1" style={{ color: "#2E86C1" }} />
-                    </div>
-                  )}
                   <div ref={finRef} />
                 </div>
               </div>
@@ -331,9 +335,17 @@ function MessageClaude({ msg, isDark }) {
           <div className={"text-sm leading-relaxed whitespace-pre-wrap " + (isDark ? "text-zinc-200" : "text-gray-700")}>
             {msg.contenu}
           </div>
+        ) : msg.enCours && !msg.contenu ? (
+          // En attente du premier morceau de la réponse
+          <Loader2 size={18} className="animate-spin mt-1" style={{ color: "#2E86C1" }} />
         ) : (
           <div className={"text-sm leading-relaxed markdown-chat " + (isDark ? "text-zinc-200" : "text-gray-700")}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.contenu}</ReactMarkdown>
+            {msg.enCours && (
+              // Curseur clignotant pendant que CrediBot écrit
+              <span className="inline-block w-2 h-4 align-middle animate-pulse rounded-sm"
+                style={{ backgroundColor: "#2E86C1" }} />
+            )}
           </div>
         )}
       </div>
