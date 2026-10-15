@@ -3,7 +3,11 @@
 import axios from "axios";
 
 // Adresse de base de ton API (le backend FastAPI)
-const API_URL = "http://127.0.0.1:8000";
+// En production, VITE_API_URL est fournie au moment du build (ex. par Render).
+// Render ne donne que le nom d'hote : on ajoute https:// si besoin.
+// En local, on garde l'adresse habituelle.
+const brut = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = /^https?:\/\//.test(brut) ? brut : `https://${brut}`;
 
 // Création d'une instance axios configurée
 const api = axios.create({

@@ -1,0 +1,29 @@
+# ===========================================================================
+# Dependances de PRODUCTION (deploiement Render / Linux)
+# ===========================================================================
+# requirements.txt contient aussi Jupyter, MLflow et pywin32 (Windows seulement),
+# qui font echouer l'installation sur un serveur Linux. Ce fichier ne garde que
+# ce dont l'API a besoin pour tourner.
+# Les versions sont celles de requirements.txt : le modele .pkl doit etre
+# recharge avec la meme version de scikit-learn que celle de l'entrainement.
+# ===========================================================================
+
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic==2.13.5
+python-multipart==0.0.32
+SQLAlchemy==2.0.54
+psycopg[binary]==3.3.5
+python-dotenv==1.2.3
+passlib==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.5.0
+email-validator==2.3.0
+pandas==3.0.5
+numpy==2.4.6
+scikit-learn==1.9.0
+lightgbm==4.7.0
+shap==0.51.0
+joblib==1.6.0
+reportlab==5.0.1
+groq==1.7.0
