@@ -133,7 +133,8 @@ def envoyer_message(
         conv.titre = envoi.question[:60] + ("..." if len(envoi.question) > 60 else "")
 
     # Obtenir la reponse de l'assistant avec le contexte de la conversation
-    texte_reponse = repondre(db, envoi.question, envoi.analyse_id, historique=historique)
+    texte_reponse = repondre(db, envoi.question, envoi.analyse_id,
+                             historique=historique, utilisateur=utilisateur)
 
     # Enregistrer la reponse
     msg_assistant = models.Message(role="assistant", contenu=texte_reponse, conversation_id=conv.id)
