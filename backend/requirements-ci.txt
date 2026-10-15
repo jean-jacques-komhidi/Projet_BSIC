@@ -23,3 +23,4 @@ pytest
 httpx
 python-multipart
 groq
+reportlab
