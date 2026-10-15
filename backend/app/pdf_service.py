@@ -614,7 +614,10 @@ def generer_pdf_decision(analyse, client, agent_nom: str) -> bytes:
 
     qr_taille = 2.1 * cm
     ax = G + 2 * (lb + 0.35 * cm) + 0.15 * cm
-    url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/") + f"/analyse/{analyse.id}"
+    site = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    if not site.startswith("http"):            # Render ne fournit que le nom d'hote
+        site = "https://" + site
+    url = f"{site}/analyse/{analyse.id}"
     _qr(c, url, D - qr_taille, bas + (h_sign - qr_taille) / 2, qr_taille)
     c.setFillColor(INK)
     c.setFont(FONT_B, 8)

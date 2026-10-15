@@ -49,6 +49,12 @@ services:
           type: web
           name: crediscore-frontend
           property: host
+      # Adresse du site, utilisee par le QR code de la fiche PDF
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: crediscore-frontend
+          property: host
 
   # --- Interface React (site statique) -------------------------------------
   - type: web
