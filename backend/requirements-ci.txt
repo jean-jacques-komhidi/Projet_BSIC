@@ -21,4 +21,5 @@ shap
 joblib
 pytest
 httpx
+python-multipart
 groq
