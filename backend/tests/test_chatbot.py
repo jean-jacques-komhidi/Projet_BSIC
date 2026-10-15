@@ -21,18 +21,27 @@ import pytest
 
 from app.database import Base, engine, SessionLocal
 from app import models, chatbot_service
-from app.chatbot_service import Pseudonymes, PROMPT_SYSTEME, construire_contexte, repondre
+from app.chatbot_service import (
+    Pseudonymes, PROMPT_SYSTEME, construire_contexte, repondre, DemasqueurFlux,
+)
 
 
 class FauxGroq:
-    """Imite client_groq.chat.completions.create et garde les messages recus."""
-    def __init__(self, reponse):
+    """Imite client_groq.chat.completions.create et garde les messages recus.
+    Si 'morceaux' est fourni, imite aussi le mode stream=True."""
+    def __init__(self, reponse, morceaux=None):
         self.reponse = reponse
+        self.morceaux = morceaux
         self.messages = None
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._creer))
 
-    def _creer(self, model, messages, **kwargs):
+    def _creer(self, model, messages, stream=False, **kwargs):
         self.messages = messages
+        if stream:
+            return iter(
+                SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=m))])
+                for m in self.morceaux
+            )
         message = SimpleNamespace(content=self.reponse)
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
@@ -138,3 +147,51 @@ def test_rien_de_nominatif_n_est_envoye_a_groq(db, monkeypatch):
     envoye = " ".join(m["content"] for m in faux.messages)
     assert "Achta" not in envoye and "Mahamat" not in envoye
     assert reponse == "Achta Mahamat presente un risque faible."
+
+
+# --- Reponse progressive (streaming) ----------------------------------------
+
+def test_flux_retablit_un_nom_coupe_entre_deux_morceaux():
+    d = DemasqueurFlux(Pseudonymes([(12, "Achta Mahamat")]))
+    morceaux = ["Le dossier de Cli", "ent", "#1", "2 est accord", "é.<b", "r>Fin"]
+    sortie = "".join(d.ajouter(m) for m in morceaux) + d.terminer()
+    assert sortie == "Le dossier de Achta Mahamat est accordé.\nFin"
+
+
+def test_flux_n_envoie_jamais_d_identifiant_partiel():
+    d = DemasqueurFlux(Pseudonymes([(12, "Achta Mahamat")]))
+    for morceau in ["Voir Client", "#", "1"]:
+        assert "Client" not in d.ajouter(morceau)
+
+
+def test_route_flux_envoie_et_enregistre_la_reponse(db, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app import conversation_routes
+    from app.security import utilisateur_courant
+
+    c = _client(db, "Achta Mahamat")
+    agent = models.User(nom="Fatime Abakar", email="agent@exemple.com", mot_de_passe="x", role="agent")
+    db.add(agent)
+    db.commit()
+    conv = models.Conversation(titre="Nouvelle conversation", user_id=agent.id)
+    db.add(conv)
+    db.commit()
+
+    faux = FauxGroq(None, morceaux=["Client#", f"{c.id} a un ", "risque faible."])
+    monkeypatch.setattr(chatbot_service, "client_groq", faux)
+    app = FastAPI()
+    app.include_router(conversation_routes.router)
+    app.dependency_overrides[utilisateur_courant] = lambda: SessionLocal().get(models.User, agent.id)
+
+    r = TestClient(app).post(f"/conversations/{conv.id}/message/flux",
+                             json={"question": "Et Achta Mahamat ?"})
+
+    assert r.status_code == 200
+    assert r.text == "Achta Mahamat a un risque faible."
+    envoye = " ".join(m["content"] for m in faux.messages)
+    assert "Achta" not in envoye
+    db.expire_all()
+    messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).all()
+    assert [m.role for m in messages] == ["user", "assistant"]
+    assert messages[1].contenu == "Achta Mahamat a un risque faible."

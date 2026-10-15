@@ -434,30 +434,55 @@ def construire_contexte(db: Session, ps: Pseudonymes, question: str,
     return contexte
 
 
-def repondre(db: Session, question: str, analyse_id: int = None,
-             historique: list = None, utilisateur=None) -> str:
-    """Repond a une question de l'agent, avec un contexte riche et le contexte
-    de la conversation en cours. Aucun nom de client n'est envoye a Groq."""
+def preparer_requete(db: Session, question: str, analyse_id: int = None,
+                     historique: list = None, utilisateur=None):
+    """Prepare les messages a envoyer a Groq (deja pseudonymises).
+
+    Renvoie (messages, pseudonymes, None) si tout va bien, ou
+    (None, None, message_d_erreur) si la question ne peut pas etre traitee."""
     if client_groq is None:
-        return "L'assistant n'est pas configure : la cle GROQ_API_KEY est absente."
+        return None, None, "L'assistant n'est pas configure : la cle GROQ_API_KEY est absente."
 
     ps = Pseudonymes(db.query(models.Client.id, models.Client.nom).all())
     contexte = construire_contexte(db, ps, question, analyse_id, historique, utilisateur)
     if contexte is None:
-        return f"Je ne trouve pas l'analyse N {analyse_id}."
+        return None, None, f"Je ne trouve pas l'analyse N {analyse_id}."
 
+    liste_messages = [
+        {"role": "system", "content": PROMPT_SYSTEME + "\n\nCONTEXTE ACTUEL DES DONNEES :\n" + contexte},
+    ]
+    # On ne garde que les derniers echanges pour limiter la latence et les tokens.
+    for msg in (historique or [])[-MAX_HISTORIQUE:]:
+        role = "assistant" if msg.get("role") == "assistant" else "user"
+        contenu = msg.get("contenu", "")
+        if contenu:
+            liste_messages.append({"role": role, "content": ps.masquer(contenu)})
+    liste_messages.append({"role": "user", "content": ps.masquer(question)})
+    return liste_messages, ps, None
+
+
+def _message_erreur(e: Exception) -> str:
+    """Traduit une erreur Groq en message comprehensible pour l'agent."""
+    from .logging_config import logger
+    message = str(e).lower()
+    logger.error(f"Erreur chatbot (Groq) : {e}")
+    if "rate limit" in message or "quota" in message or "429" in message:
+        return ("L'assistant est temporairement surcharge (trop de demandes). "
+                "Reessayez dans quelques instants.")
+    if "authentication" in message or "api key" in message or "401" in message:
+        return ("L'assistant n'est pas correctement configure (cle API invalide). "
+                "Contactez l'administrateur.")
+    return "L'assistant est momentanement indisponible. Reessayez plus tard."
+
+
+def repondre(db: Session, question: str, analyse_id: int = None,
+             historique: list = None, utilisateur=None) -> str:
+    """Repond a une question de l'agent (reponse complete en une fois).
+    Aucun nom de client n'est envoye a Groq."""
+    liste_messages, ps, erreur = preparer_requete(db, question, analyse_id, historique, utilisateur)
+    if erreur:
+        return erreur
     try:
-        liste_messages = [
-            {"role": "system", "content": PROMPT_SYSTEME + "\n\nCONTEXTE ACTUEL DES DONNEES :\n" + contexte},
-        ]
-        # On ne garde que les derniers echanges pour limiter la latence et les tokens.
-        for msg in (historique or [])[-MAX_HISTORIQUE:]:
-            role = "assistant" if msg.get("role") == "assistant" else "user"
-            contenu = msg.get("contenu", "")
-            if contenu:
-                liste_messages.append({"role": role, "content": ps.masquer(contenu)})
-        liste_messages.append({"role": "user", "content": ps.masquer(question)})
-
         reponse = client_groq.chat.completions.create(
             model=MODELE_LLM,
             messages=liste_messages,
@@ -467,13 +492,81 @@ def repondre(db: Session, question: str, analyse_id: int = None,
         texte = reponse.choices[0].message.content.strip()
         return _nettoyer_html(ps.demasquer(texte))
     except Exception as e:
-        from .logging_config import logger
-        message = str(e).lower()
-        logger.error(f"Erreur chatbot (Groq) : {e}")
-        if "rate limit" in message or "quota" in message or "429" in message:
-            return ("L'assistant est temporairement surcharge (trop de demandes). "
-                    "Reessayez dans quelques instants.")
-        if "authentication" in message or "api key" in message or "401" in message:
-            return ("L'assistant n'est pas correctement configure (cle API invalide). "
-                    "Contactez l'administrateur.")
-        return "L'assistant est momentanement indisponible. Reessayez plus tard."
+        return _message_erreur(e)
+
+
+# ---------------------------------------------------------------------------
+# Reponse progressive (streaming)
+# ---------------------------------------------------------------------------
+class DemasqueurFlux:
+    """Retablit les vrais noms dans une reponse qui arrive par petits morceaux.
+
+    Un identifiant comme 'Client#12' peut etre coupe entre deux morceaux
+    ('Cli' puis 'ent#12'). On garde donc en attente la fin du texte tant
+    qu'elle pourrait etre le debut d'un identifiant (ou d'une balise HTML a
+    nettoyer), et on ne l'envoie qu'une fois sure."""
+
+    # Fin de texte qui POURRAIT etre un identifiant inacheve : 'C', 'Cli',
+    # 'Client', 'Client#', 'Client#1' (d'autres chiffres peuvent suivre)...
+    _DEBUT_JETON = re.compile(
+        r"C(?:l(?:i(?:e(?:n(?:t(?:\s*(?:#\s*\d*)?)?)?)?)?)?)?$", re.IGNORECASE)
+    # Balise HTML commencee mais pas encore fermee
+    _DEBUT_BALISE = re.compile(r"<[^>]{0,15}$")
+
+    def __init__(self, pseudonymes: Pseudonymes):
+        self.ps = pseudonymes
+        self.attente = ""
+
+    def ajouter(self, morceau: str) -> str:
+        """Ajoute un morceau recu ; renvoie le texte sur, pret a afficher."""
+        texte = self.attente + morceau
+        coupure = len(texte)
+        for motif in (self._DEBUT_JETON, self._DEBUT_BALISE):
+            m = motif.search(texte)
+            if m:
+                coupure = min(coupure, m.start())
+        self.attente = texte[coupure:]
+        return self._propre(texte[:coupure])
+
+    def terminer(self) -> str:
+        """Fin du flux : renvoie ce qui restait en attente."""
+        reste, self.attente = self.attente, ""
+        return self._propre(reste)
+
+    def _propre(self, texte: str) -> str:
+        if not texte:
+            return ""
+        texte = self.ps.demasquer(texte)
+        texte = re.sub(r"<\s*br\s*/?\s*>", "\n", texte, flags=re.IGNORECASE)
+        return re.sub(r"</?\s*(div|span|table|tr|td|th|ul|ol|li)[^>]*>", "", texte, flags=re.IGNORECASE)
+
+
+def repondre_en_flux(liste_messages: list, ps: Pseudonymes):
+    """Generateur : renvoie la reponse de Groq morceau par morceau, avec les
+    vrais noms des clients deja retablis. En cas d'erreur, renvoie le message
+    d'erreur comme dernier morceau."""
+    demasqueur = DemasqueurFlux(ps)
+    try:
+        flux = client_groq.chat.completions.create(
+            model=MODELE_LLM,
+            messages=liste_messages,
+            temperature=0.4,
+            max_tokens=1000,
+            stream=True,
+        )
+        for evenement in flux:
+            if not evenement.choices:
+                continue
+            morceau = evenement.choices[0].delta.content
+            if morceau:
+                sortie = demasqueur.ajouter(morceau)
+                if sortie:
+                    yield sortie
+        fin = demasqueur.terminer()
+        if fin:
+            yield fin
+    except Exception as e:
+        fin = demasqueur.terminer()
+        if fin:
+            yield fin
+        yield ("\n\n" if fin else "") + _message_erreur(e)
