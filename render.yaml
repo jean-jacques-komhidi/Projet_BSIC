@@ -1,0 +1,63 @@
+# ===========================================================================
+# Blueprint Render - CREDISCORE-BSIC
+# ===========================================================================
+# Dans Render : New > Blueprint > choisir ce depot. Render cree alors :
+#   1. crediscore-db        : base PostgreSQL
+#   2. crediscore-api       : API FastAPI (dossier backend/)
+#   3. crediscore-frontend  : interface React/Vite (dossier frontend/)
+# Les adresses de l'API et du frontend sont reliees automatiquement.
+# Seule GROQ_API_KEY (chatbot) est demandee a la creation.
+# ===========================================================================
+
+databases:
+  - name: crediscore-db
+    plan: free
+    databaseName: credit_bsic
+    user: crediscore
+
+services:
+  # --- API FastAPI ---------------------------------------------------------
+  - type: web
+    name: crediscore-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements-prod.txt
+    # init_db cree les tables si elles n'existent pas (sans effet sinon)
+    startCommand: python -m app.init_db && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crediscore-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        fromService:
+          type: web
+          name: crediscore-frontend
+          property: host
+
+  # --- Interface React (site statique) -------------------------------------
+  - type: web
+    name: crediscore-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # React Router : toutes les URL renvoient vers index.html
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: crediscore-api
+          property: host

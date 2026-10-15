@@ -40,6 +40,13 @@ origines_autorisees = [
     "http://localhost:3000", "http://127.0.0.1:3000",
     "http://localhost:5173", "http://127.0.0.1:5173",
 ]
+# En production : origines supplementaires separees par des virgules
+# (ex. CORS_ORIGINS=crediscore-frontend.onrender.com). https:// ajoute si absent.
+import os
+for _o in os.getenv("CORS_ORIGINS", "").split(","):
+    _o = _o.strip().rstrip("/")
+    if _o:
+        origines_autorisees.append(_o if _o.startswith("http") else f"https://{_o}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origines_autorisees,
