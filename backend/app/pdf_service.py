@@ -4,8 +4,7 @@ Generation de la fiche de decision de credit au format PDF.
 
 A partir d'une analyse enregistree, produit une fiche d'une page :
 identite BSIC (bleu du logo), reference du dossier, client et credit,
-decision avec jauge de risque a trois zones, indicateurs cles (taux
-d'endettement, quotite de financement, nombre d'echeances), motivation,
+decision et barre de probabilite de defaut, motivation,
 facteurs determinants avec leur poids, conditions ou recommandations
 adaptees au dossier, signatures, QR code et code d'authenticite.
 
@@ -38,7 +37,7 @@ from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
 
-from .model_service import SEUIL_DECISION, SEUIL_RISQUE_FAIBLE
+from .model_service import SEUIL_DECISION
 
 # ---------------------------------------------------------------------------
 # Palette (alignee sur le logo BSIC)
@@ -55,10 +54,6 @@ ROUGE = colors.HexColor("#B42318")       # refuse
 ROUGE_PALE = colors.HexColor("#FCEBEA")
 AMBRE = colors.HexColor("#B45309")       # vigilance (contraste 5:1)
 AMBRE_PALE = colors.HexColor("#FDF1E1")
-# Zones de la jauge (memes seuils que l'application)
-ZONE_FAIBLE = colors.HexColor("#BFE3D3")
-ZONE_MOYEN = colors.HexColor("#F6D9A8")
-ZONE_ELEVE = colors.HexColor("#F2B8B2")
 
 CHEMIN_LOGO = os.path.join(os.path.dirname(__file__), "logo_bsic.png")
 NORME_ENDETTEMENT = 0.33
@@ -385,301 +380,40 @@ def _version_modele(analyse) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Bloc "decision" : trois variantes (A actuelle, B sobre, C bandeau)
+# Bloc "decision" (presentation de la fiche d'origine)
 # ---------------------------------------------------------------------------
-ZONES = [(0, SEUIL_RISQUE_FAIBLE, ZONE_FAIBLE, "Faible"),
-         (SEUIL_RISQUE_FAIBLE, SEUIL_DECISION, ZONE_MOYEN, "Moyen"),
-         (SEUIL_DECISION, 1, ZONE_ELEVE, "Élevé")]
-
-
-def _jauge(c, x, y, largeur, hauteur, proba, noms_dedans=False, noms_dessous=True):
-    """Jauge a trois zones, trait du seuil de refus et curseur sur la valeur."""
-    for debut, fin, teinte, nom in ZONES:
-        c.setFillColor(teinte)
-        c.rect(x + largeur * debut, y, largeur * (fin - debut), hauteur, fill=1, stroke=0)
-        c.setFillColor(INK if noms_dedans else GRIS)
-        c.setFont(FONT, 6.5)
-        milieu = x + largeur * (debut + fin) / 2
-        if noms_dedans:
-            c.drawString(x + largeur * debut + 0.2 * cm, y + hauteur / 2 - 2.2, nom)
-        elif noms_dessous:
-            c.drawCentredString(milieu, y - 0.35 * cm, nom)
-    sx = x + largeur * SEUIL_DECISION
-    c.setStrokeColor(INK)
-    c.setLineWidth(1)
-    c.setDash(2, 1.5)
-    c.line(sx, y - 0.1 * cm, sx, y + hauteur + 0.1 * cm)
-    c.setDash()
-    cx = x + largeur * min(max(proba, 0), 1)
+def _bloc_decision(c, G, D, largeur, Y, accorde, couleur, proba, classe, modele):
+    """Cadre blanc borde de la couleur de la decision, avec la classe de
+    risque, le modele, et une barre de probabilite de defaut."""
+    haut, hauteur = 8.75, 2.2
+    c.setStrokeColor(couleur)
+    c.setLineWidth(2)
+    c.roundRect(G, Y(haut + hauteur), largeur, hauteur * cm, 7, fill=0, stroke=1)
+    c.setFillColor(couleur)
+    c.setFont(FONT_B, 15.5)
+    c.drawString(G + 0.5 * cm, Y(haut + 0.8),
+                 "DÉCISION : CRÉDIT ACCORDÉ" if accorde else "DÉCISION : CRÉDIT REFUSÉ")
     c.setFillColor(INK)
-    p = c.beginPath()
-    p.moveTo(cx - 0.13 * cm, y + hauteur + 0.24 * cm)
-    p.lineTo(cx + 0.13 * cm, y + hauteur + 0.24 * cm)
-    p.lineTo(cx, y + hauteur + 0.03 * cm)
-    p.close()
-    c.drawPath(p, fill=1, stroke=0)
-    c.setStrokeColor(INK)
-    c.setLineWidth(1.6)
-    c.line(cx, y - 0.04 * cm, cx, y + hauteur + 0.04 * cm)
+    c.setFont(FONT, 10)
+    c.drawString(G + 0.5 * cm, Y(haut + 1.4), f"Classe de risque : {classe.upper()}")
+    c.drawString(G + 0.5 * cm, Y(haut + 1.8), modele)
 
-
-def _titre_decision(accorde):
-    return "Crédit accordé" if accorde else "Crédit refusé"
-
-
-def _decision_a(c, k):
-    """A - version actuelle : encadre teinte, jauge a droite."""
-    G, D, largeur, Y = k["G"], k["D"], k["largeur"], k["Y"]
-    haut, hauteur = 8.75, 2.45
-    c.setFillColor(VERT_PALE if k["accorde"] else ROUGE_PALE)
-    c.setStrokeColor(k["couleur"])
-    c.setLineWidth(1.2)
-    c.roundRect(G, Y(haut + hauteur), largeur, hauteur * cm, 6, fill=1, stroke=1)
-    _icone(c, G + 0.85 * cm, Y(haut + 0.9), 0.38 * cm, "ok" if k["accorde"] else "non", k["couleur"])
-    c.setFillColor(k["couleur"])
-    c.setFont(FONT_B, 18)
-    c.drawString(G + 1.5 * cm, Y(haut + 1.08), _titre_decision(k["accorde"]).upper())
-    c.setFillColor(INK)
+    # Barre de probabilite, entierement a l'interieur du cadre
+    pct_largeur = c.stringWidth("100 %", FONT_B, 15)
+    pct_x = D - 0.5 * cm - pct_largeur
+    jw = 3.2 * cm
+    jx = pct_x - jw - 0.35 * cm
+    jy = Y(haut + 1.5)
+    c.setFillColor(GRIS)
     c.setFont(FONT, 9)
-    c.drawString(G + 1.5 * cm, Y(haut + 1.65), f"Classe de risque : {k['classe']}")
-    c.drawString(G + 1.5 * cm, Y(haut + 2.05), f"Seuil de refus : {_pct(SEUIL_DECISION)} de probabilité de défaut")
-    gx, gw = G + 9.3 * cm, largeur - 9.8 * cm
-    c.setFillColor(GRIS)
-    c.setFont(FONT, 8)
-    c.drawString(gx, Y(haut + 0.6), "Probabilité de défaut")
-    c.setFillColor(k["couleur"])
-    c.setFont(FONT_B, 18)
-    c.drawRightString(gx + gw, Y(haut + 0.85), _pct(k["proba"]))
-    _jauge(c, gx, Y(haut + 1.55), gw, 0.3 * cm, k["proba"])
-
-
-def _decision_b(c, k):
-    """B - sobre : fond blanc, filet de couleur a gauche, grand pourcentage."""
-    G, D, largeur, Y = k["G"], k["D"], k["largeur"], k["Y"]
-    haut, hauteur = 8.75, 2.45
-    c.setFillColor(colors.white)
-    c.setStrokeColor(TRAIT)
-    c.setLineWidth(0.8)
-    c.roundRect(G, Y(haut + hauteur), largeur, hauteur * cm, 5, fill=1, stroke=1)
-    c.setFillColor(k["couleur"])
-    c.roundRect(G + 0.3 * cm, Y(haut + hauteur - 0.3), 0.13 * cm, (hauteur - 0.6) * cm, 2, fill=1, stroke=0)
-    c.setFillColor(GRIS)
-    c.setFont(FONT_B, 7)
-    c.drawString(G + 0.75 * cm, Y(haut + 0.65), "DÉCISION")
-    _icone(c, G + 1.0 * cm, Y(haut + 1.22), 0.27 * cm, "ok" if k["accorde"] else "non", k["couleur"])
-    c.setFillColor(k["couleur"])
-    c.setFont(FONT_B, 19)
-    c.drawString(G + 1.45 * cm, Y(haut + 1.43), _titre_decision(k["accorde"]))
-    c.setFillColor(GRIS)
-    c.setFont(FONT, 8.5)
-    c.drawString(G + 0.75 * cm, Y(haut + 2.0),
-                 f"Classe de risque : {k['classe']}   ·   Seuil de refus : {_pct(SEUIL_DECISION)}")
-    # Colonne de droite, separee par un filet
-    xd = G + 10.2 * cm
-    c.setStrokeColor(TRAIT)
-    c.setLineWidth(0.8)
-    c.line(xd - 0.5 * cm, Y(haut + 0.35), xd - 0.5 * cm, Y(haut + hauteur - 0.35))
-    c.setFillColor(GRIS)
-    c.setFont(FONT_B, 7)
-    c.drawString(xd, Y(haut + 0.65), "PROBABILITÉ DE DÉFAUT")
-    c.setFillColor(k["couleur"])
-    c.setFont(FONT_B, 21)
-    c.drawString(xd, Y(haut + 1.38), _pct(k["proba"]))
-    _jauge(c, xd, Y(haut + 1.92), D - 0.5 * cm - xd, 0.2 * cm, k["proba"], noms_dessous=False)
-    c.setFillColor(GRIS)
-    c.setFont(FONT, 6)
-    c.drawString(xd, Y(haut + 2.22), "0 %")
-    c.drawCentredString(xd + (D - 0.5 * cm - xd) * SEUIL_DECISION, Y(haut + 2.22), f"seuil {_pct(SEUIL_DECISION)}")
-    c.drawRightString(D - 0.5 * cm, Y(haut + 2.22), "100 %")
-
-
-def _decision_c(c, k):
-    """C - bandeau : bandeau plein de couleur, grande jauge sur toute la largeur."""
-    G, D, largeur, Y = k["G"], k["D"], k["largeur"], k["Y"]
-    haut, hauteur, bandeau = 8.75, 2.45, 0.95
-    c.setFillColor(colors.white)
-    c.setStrokeColor(k["couleur"])
-    c.setLineWidth(1)
-    c.roundRect(G, Y(haut + hauteur), largeur, hauteur * cm, 5, fill=1, stroke=1)
-    c.setFillColor(k["couleur"])
-    c.roundRect(G, Y(haut + bandeau), largeur, bandeau * cm, 5, fill=1, stroke=0)
-    c.rect(G, Y(haut + bandeau), largeur, 0.3 * cm, fill=1, stroke=0)
-    # Pastille inversee (blanche) sur le bandeau
-    c.setFillColor(colors.white)
-    c.circle(G + 0.7 * cm, Y(haut + 0.48), 0.25 * cm, fill=1, stroke=0)
-    _icone(c, G + 0.7 * cm, Y(haut + 0.48), 0.2 * cm, "ok" if k["accorde"] else "non", k["couleur"])
-    c.setFillColor(colors.white)
-    c.setFont(FONT_B, 14)
-    titre = _titre_decision(k["accorde"]).upper()
-    c.drawString(G + 1.15 * cm, Y(haut + 0.62), titre)
-    c.setFont(FONT, 9)
-    c.drawString(G + 1.15 * cm + c.stringWidth(titre, FONT_B, 14) + 0.35 * cm, Y(haut + 0.6),
-                 f"·  Risque {k['classe'].lower()}")
-    c.setFont(FONT_B, 11)
-    c.drawRightString(D - 0.4 * cm, Y(haut + 0.6), f"Probabilité de défaut : {_pct(k['proba'])}")
-    # Grande jauge
-    gx, gw = G + 0.5 * cm, largeur - 1.0 * cm
-    _jauge(c, gx, Y(haut + 1.72), gw, 0.34 * cm, k["proba"], noms_dedans=True)
-    c.setFillColor(GRIS)
-    c.setFont(FONT, 6.5)
-    c.drawString(gx, Y(haut + 2.1), "0 %")
-    c.drawCentredString(gx + gw * SEUIL_RISQUE_FAIBLE, Y(haut + 2.1), _pct(SEUIL_RISQUE_FAIBLE))
-    c.drawCentredString(gx + gw * SEUIL_DECISION, Y(haut + 2.1), f"{_pct(SEUIL_DECISION)} · seuil de refus")
-    c.drawRightString(gx + gw, Y(haut + 2.1), "100 %")
-
-
-# ---------------------------------------------------------------------------
-# Bloc "indicateurs cles" : trois variantes (A tuiles, B tableau, C reperes)
-# ---------------------------------------------------------------------------
-def _indicateurs(ratios):
-    """Valeur, couleur, icone et appreciation de chaque indicateur."""
-    endet, quotite, nb = ratios["endettement"], ratios["quotite"], ratios["echeances"]
-    if endet is None:
-        e = ("—", GRIS, None, "Données incomplètes")
-    elif endet <= NORME_ENDETTEMENT:
-        e = (_pct(endet), VERT, "ok", "Conforme")
-    elif endet <= 0.5:
-        e = (_pct(endet), AMBRE, "alerte", "Hors norme")
-    else:
-        e = (_pct(endet), ROUGE, "non", "Très hors norme")
-    if quotite is None:
-        q = ("—", GRIS, None, "Données incomplètes")
-    elif quotite <= 1:
-        q = (_pct(quotite), VERT, "ok", "Couvert par le bien")
-    else:
-        q = (_pct(quotite), AMBRE, "alerte", "Dépasse le prix du bien")
-    n = (f"env. {nb}" if nb else "—", INK, None, "Estimation hors intérêts")
-    return [
-        {"nom": "Taux d'endettement", "calcul": "Échéance ÷ revenu",
-         "reference": f"{_pct(NORME_ENDETTEMENT)} max.", "x": endet, "norme": NORME_ENDETTEMENT,
-         "echelle": 1.0, "etat": e, "court": e[3]},
-        {"nom": "Quotité de financement", "calcul": "Crédit ÷ prix du bien",
-         "reference": "100 % max.", "x": quotite, "norme": 1.0, "echelle": 1.5, "etat": q,
-         "court": {"Couvert par le bien": "Conforme", "Dépasse le prix du bien": "Dépassement"}.get(q[3], q[3])},
-        {"nom": "Nombre d'échéances", "calcul": "Crédit ÷ échéance",
-         "reference": "—", "x": None, "norme": None, "echelle": None, "etat": n, "court": "Hors intérêts"},
-    ]
-
-
-def _indicateurs_a(c, k, ratios):
-    """A - version actuelle : trois tuiles."""
-    G, largeur, Y = k["G"], k["largeur"], k["Y"]
-    _titre_section(c, G, Y(11.75), "INDICATEURS CLÉS DU DOSSIER", largeur)
-    tw = (largeur - 2 * 0.4 * cm) / 3
-    for i, ind in enumerate(_indicateurs(ratios)):
-        valeur, coul, icone, note = ind["etat"]
-        if ind["nom"] == "Nombre d'échéances":
-            note = "Hors intérêts"
-        formule = ind["calcul"] + (f" · norme {ind['reference']}" if ind["nom"] == "Taux d'endettement" else "")
-        tx = G + i * (tw + 0.4 * cm)
-        c.setFillColor(FOND)
-        c.roundRect(tx, Y(13.65), tw, 1.5 * cm, 4, fill=1, stroke=0)
-        c.setFillColor(INK)
-        c.setFont(FONT_B, 8.5)
-        c.drawString(tx + 0.3 * cm, Y(12.6), ind["nom"])
-        c.setFillColor(GRIS)
-        c.setFont(FONT, 6.5)
-        c.drawString(tx + 0.3 * cm, Y(12.92), formule)
-        c.setFillColor(coul)
-        c.setFont(FONT_B, 13)
-        c.drawString(tx + 0.3 * cm, Y(13.43), valeur)
-        vx = tx + 0.3 * cm + c.stringWidth(valeur, FONT_B, 13) + 0.25 * cm
-        if icone:
-            _icone(c, vx + 0.14 * cm, Y(13.53), 0.14 * cm, icone, coul)
-            vx += 0.4 * cm
-        c.setFillColor(GRIS)
-        c.setFont(FONT, 6.5)
-        c.drawString(vx, Y(13.48), note)
-
-
-def _indicateurs_b(c, k, ratios):
-    """B - tableau : une ligne par indicateur, avec la reference."""
-    G, D, largeur, Y = k["G"], k["D"], k["largeur"], k["Y"]
-    _titre_section(c, G, Y(11.65), "INDICATEURS CLÉS DU DOSSIER", largeur)
-    cols = [G + 0.3 * cm, G + 4.7 * cm, G + 8.4 * cm, G + 10.4 * cm]
-    c.setFillColor(FOND)
-    c.rect(G, Y(12.4), largeur, 0.45 * cm, fill=1, stroke=0)
-    c.setFillColor(GRIS)
-    c.setFont(FONT_B, 7)
-    for x, t in zip(cols, ["INDICATEUR", "CALCUL", "VALEUR", "RÉFÉRENCE"]):
-        c.drawString(x, Y(12.24), t)
-    c.drawRightString(D - 0.3 * cm, Y(12.24), "APPRÉCIATION")
-    y = 12.8
-    for ind in _indicateurs(ratios):
-        valeur, coul, icone, note = ind["etat"]
-        c.setFillColor(INK)
-        c.setFont(FONT_B, 8.5)
-        c.drawString(cols[0], Y(y), ind["nom"])
-        c.setFillColor(GRIS)
-        c.setFont(FONT, 8)
-        c.drawString(cols[1], Y(y), ind["calcul"])
-        c.setFillColor(coul)
-        c.setFont(FONT_B, 10)
-        c.drawString(cols[2], Y(y), valeur)
-        c.setFillColor(GRIS)
-        c.setFont(FONT, 8)
-        c.drawString(cols[3], Y(y), ind["reference"])
-        c.setFillColor(coul if icone else GRIS)
-        c.setFont(FONT_B if icone else FONT, 8)
-        c.drawRightString(D - 0.3 * cm, Y(y), note)
-        if icone:
-            _icone(c, D - 0.3 * cm - c.stringWidth(note, FONT_B, 8) - 0.3 * cm, Y(y) + 0.1 * cm,
-                   0.14 * cm, icone, coul)
-        c.setStrokeColor(TRAIT)
-        c.setLineWidth(0.6)
-        c.line(G, Y(y + 0.22), D, Y(y + 0.22))
-        y += 0.52
-
-
-def _indicateurs_c(c, k, ratios):
-    """C - cartes avec repere : valeur, appreciation et barre avec la norme."""
-    G, largeur, Y = k["G"], k["largeur"], k["Y"]
-    _titre_section(c, G, Y(11.75), "INDICATEURS CLÉS DU DOSSIER", largeur)
-    tw = (largeur - 2 * 0.4 * cm) / 3
-    for i, ind in enumerate(_indicateurs(ratios)):
-        valeur, coul, icone, note = ind["etat"]
-        tx = G + i * (tw + 0.4 * cm)
-        c.setFillColor(colors.white)
-        c.setStrokeColor(TRAIT)
-        c.setLineWidth(0.8)
-        c.roundRect(tx, Y(13.75), tw, 1.6 * cm, 4, fill=1, stroke=1)
-        c.setFillColor(GRIS)
-        c.setFont(FONT_B, 7)
-        c.drawString(tx + 0.3 * cm, Y(12.55), ind["nom"].upper())
-        c.setFillColor(coul)
-        c.setFont(FONT_B, 15)
-        c.drawString(tx + 0.3 * cm, Y(13.13), valeur)
-        if icone:
-            court = ind["court"]
-            c.setFont(FONT_B, 7.5)
-            c.drawRightString(tx + tw - 0.3 * cm, Y(13.08), court)
-            _icone(c, tx + tw - 0.3 * cm - c.stringWidth(court, FONT_B, 7.5) - 0.25 * cm,
-                   Y(13.08) + 0.09 * cm, 0.13 * cm, icone, coul)
-        bx, bw, by = tx + 0.3 * cm, tw - 0.6 * cm, Y(13.45)
-        if ind["x"] is not None and ind["echelle"]:
-            c.setFillColor(TRAIT)
-            c.rect(bx, by, bw, 0.12 * cm, fill=1, stroke=0)
-            c.setFillColor(coul)
-            c.rect(bx, by, bw * min(ind["x"] / ind["echelle"], 1), 0.12 * cm, fill=1, stroke=0)
-            nx = bx + bw * ind["norme"] / ind["echelle"]
-            c.setStrokeColor(INK)
-            c.setLineWidth(1)
-            c.setDash(1.5, 1)
-            c.line(nx, by - 0.08 * cm, nx, by + 0.2 * cm)
-            c.setDash()
-            c.setFillColor(GRIS)
-            c.setFont(FONT, 6)
-            c.drawCentredString(nx, by - 0.3 * cm, f"norme {ind['reference'].replace(' max.', '')}")
-        else:
-            c.setFillColor(GRIS)
-            c.setFont(FONT, 6.5)
-            c.drawString(bx, by - 0.05 * cm, f"{ind['calcul']} · {ind['court'].lower()}")
-
-
-BLOCS_DECISION = {"A": _decision_a, "B": _decision_b, "C": _decision_c}
-BLOCS_INDICATEURS = {"A": _indicateurs_a, "B": _indicateurs_b, "C": _indicateurs_c}
-STYLE_DECISION = "A"
-STYLE_INDICATEURS = "A"
+    c.drawString(jx, jy + 0.75 * cm, "Probabilité de défaut")
+    c.setFillColor(TRAIT)
+    c.roundRect(jx, jy + 0.1 * cm, jw, 0.35 * cm, 2, fill=1, stroke=0)
+    c.setFillColor(couleur)
+    c.roundRect(jx, jy + 0.1 * cm, jw * min(max(proba, 0), 1), 0.35 * cm, 2, fill=1, stroke=0)
+    c.setFont(FONT_B, 15)
+    c.drawRightString(D - 0.5 * cm, jy + 0.08 * cm, _pct(proba))
+    return haut + hauteur
 
 
 # ---------------------------------------------------------------------------
@@ -781,21 +515,18 @@ def generer_pdf_decision(analyse, client, agent_nom: str) -> bytes:
             c.drawString(x + 3.4 * cm, Y(y), str(valeur))
             y += 0.5
 
-    # === DECISION + JAUGE ================================================
+    # === DECISION ========================================================
     classe = (analyse.classe_risque or "—").capitalize().replace("Eleve", "Élevé")
-    ctx = dict(G=G, D=D, largeur=largeur, Y=Y, accorde=accorde, couleur=couleur_dec,
-               proba=proba, classe=classe)
-    BLOCS_DECISION[STYLE_DECISION](c, ctx)
-
-    # === INDICATEURS CLES ================================================
-    BLOCS_INDICATEURS[STYLE_INDICATEURS](c, ctx, ratios)
+    modele = _version_modele(analyse).split(" (")[0]
+    fin_decision = _bloc_decision(c, G, D, largeur, Y, accorde, couleur_dec, proba, classe, modele)
 
     # === MOTIVATION ======================================================
-    _titre_section(c, G, Y(14.4), "MOTIVATION DE LA DÉCISION", largeur)
+    y = fin_decision + 0.75
+    _titre_section(c, G, Y(y), "MOTIVATION DE LA DÉCISION", largeur)
     para = _paragraphe(_motivation(accorde, proba, facteurs))
     _, ph = para.wrap(largeur, 5 * cm)
-    para.drawOn(c, G, Y(14.75) - ph)
-    y = 14.75 + ph / cm + 0.7
+    para.drawOn(c, G, Y(y + 0.35) - ph)
+    y = y + 0.35 + ph / cm + 0.7
 
     # === FACTEURS ========================================================
     _titre_section(c, G, Y(y), "FACTEURS DÉTERMINANTS DE L'ÉVALUATION", largeur)
