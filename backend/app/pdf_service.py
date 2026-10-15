@@ -382,10 +382,15 @@ def _version_modele(analyse) -> str:
 # ---------------------------------------------------------------------------
 # Bloc "decision" (presentation de la fiche d'origine)
 # ---------------------------------------------------------------------------
-def _bloc_decision(c, G, D, largeur, Y, accorde, couleur, proba, classe, modele):
+HAUTEUR_DECISION = 2.2   # cm
+BAS_SIGNATURES = 2.6 * cm
+HAUTEUR_SIGNATURES = 3.2 * cm
+
+
+def _bloc_decision(c, haut, G, D, largeur, Y, accorde, couleur, proba, classe, modele):
     """Cadre blanc borde de la couleur de la decision, avec la classe de
     risque, le modele, et une barre de probabilite de defaut."""
-    haut, hauteur = 8.75, 2.2
+    hauteur = HAUTEUR_DECISION
     c.setStrokeColor(couleur)
     c.setLineWidth(2)
     c.roundRect(G, Y(haut + hauteur), largeur, hauteur * cm, 7, fill=0, stroke=1)
@@ -505,7 +510,7 @@ def generer_pdf_decision(analyse, client, agent_nom: str) -> bytes:
         ("Revenu", _fcfa(dossier.get("AMT_INCOME_TOTAL"))),
     ]
     for x, infos in ((G, infos_client), (x2, infos_credit)):
-        y = 6.15
+        y = 6.2
         for libelle, valeur in infos:
             c.setFillColor(GRIS)
             c.setFont(FONT, 9)
@@ -513,70 +518,83 @@ def generer_pdf_decision(analyse, client, agent_nom: str) -> bytes:
             c.setFillColor(INK)
             c.setFont(FONT_B, 9)
             c.drawString(x + 3.4 * cm, Y(y), str(valeur))
-            y += 0.5
+            y += 0.55
+
+    # === MISE EN PAGE VERTICALE ==========================================
+    # Les sections sont d'abord mesurees, puis l'espace libre est reparti
+    # entre elles : la fiche occupe toute la page sans etre chargee.
+    para = _paragraphe(_motivation(accorde, proba, facteurs), taille=10, interligne=15)
+    _, ph = para.wrap(largeur, 6 * cm)
+    titre_bloc, lignes = _conditions_ou_recommandations(accorde, facteurs, ratios)
+    paras = [_paragraphe(l, taille=9, interligne=13, couleur=INK, align=0) for l in lignes]
+    hauteurs = [p.wrap(largeur - 1.3 * cm, 3 * cm)[1] for p in paras]
+    h_bloc = 0.85 * cm + sum(hauteurs) + 0.2 * cm * len(paras) + 0.25 * cm
+    pas = 0.62                                         # entre deux facteurs (cm)
+    h_mot = 0.45 + ph / cm
+    h_fac = 0.6 + 0.55 + pas * max(len(facteurs) - 1, 0) + 0.15
+    h_reco = h_bloc / cm
+    fin_client = 6.2 + 0.55 * 4 + 0.15
+    limite = (H - BAS_SIGNATURES - HAUTEUR_SIGNATURES) / cm   # haut des signatures
+    libre = limite - fin_client - (HAUTEUR_DECISION + h_mot + h_fac + h_reco)
+    ecart = min(max(libre / 5, 0.55), 1.3)
 
     # === DECISION ========================================================
+    y = fin_client + ecart
     classe = (analyse.classe_risque or "—").capitalize().replace("Eleve", "Élevé")
     modele = _version_modele(analyse).split(" (")[0]
-    fin_decision = _bloc_decision(c, G, D, largeur, Y, accorde, couleur_dec, proba, classe, modele)
+    _bloc_decision(c, y, G, D, largeur, Y, accorde, couleur_dec, proba, classe, modele)
+    y += HAUTEUR_DECISION + ecart
 
     # === MOTIVATION ======================================================
-    y = fin_decision + 0.75
     _titre_section(c, G, Y(y), "MOTIVATION DE LA DÉCISION", largeur)
-    para = _paragraphe(_motivation(accorde, proba, facteurs))
-    _, ph = para.wrap(largeur, 5 * cm)
-    para.drawOn(c, G, Y(y + 0.35) - ph)
-    y = y + 0.35 + ph / cm + 0.7
+    para.drawOn(c, G, Y(y + 0.45) - ph)
+    y += h_mot + ecart
 
     # === FACTEURS ========================================================
     _titre_section(c, G, Y(y), "FACTEURS DÉTERMINANTS DE L'ÉVALUATION", largeur)
-    y += 0.55
+    yy = y + 0.6
     col_val, col_barre, barre_max = G + 6.2 * cm, G + 11.2 * cm, 3.2 * cm
     c.setFillColor(GRIS)
     c.setFont(FONT, 7)
-    c.drawString(G + 0.6 * cm, Y(y), "Facteur")
-    c.drawString(col_val, Y(y), "Valeur du dossier")
-    c.drawString(col_barre, Y(y), "Poids dans la décision")
-    c.drawRightString(D, Y(y), "Effet")
-    y += 0.5
+    c.drawString(G + 0.6 * cm, Y(yy), "Facteur")
+    c.drawString(col_val, Y(yy), "Valeur du dossier")
+    c.drawString(col_barre, Y(yy), "Poids dans la décision")
+    c.drawRightString(D, Y(yy), "Effet")
+    yy += 0.55
     poids_max = max((abs(f["contribution"]) for f in facteurs), default=0) or 1
     for f in facteurs:
         favorable = f["contribution"] < 0
         coul = VERT if favorable else AMBRE
-        _icone(c, G + 0.2 * cm, Y(y) + 0.1 * cm, 0.17 * cm, "ok" if favorable else "alerte", coul)
+        _icone(c, G + 0.2 * cm, Y(yy) + 0.11 * cm, 0.18 * cm, "ok" if favorable else "alerte", coul)
         c.setFillColor(INK)
-        c.setFont(FONT, 9)
-        c.drawString(G + 0.6 * cm, Y(y), f["libelle"])
-        c.drawString(col_val, Y(y), f["valeur"])
+        c.setFont(FONT, 9.5)
+        c.drawString(G + 0.6 * cm, Y(yy), f["libelle"])
+        c.drawString(col_val, Y(yy), f["valeur"])
         c.setFillColor(TRAIT)
-        c.rect(col_barre, Y(y) - 0.02 * cm, barre_max, 0.24 * cm, fill=1, stroke=0)
+        c.rect(col_barre, Y(yy) - 0.02 * cm, barre_max, 0.26 * cm, fill=1, stroke=0)
         c.setFillColor(coul)
-        c.rect(col_barre, Y(y) - 0.02 * cm, barre_max * abs(f["contribution"]) / poids_max,
-               0.24 * cm, fill=1, stroke=0)
-        c.setFont(FONT_B, 8.5)
-        c.drawRightString(D, Y(y), "Favorable" if favorable else "Vigilance")
-        y += 0.52
+        c.rect(col_barre, Y(yy) - 0.02 * cm, barre_max * abs(f["contribution"]) / poids_max,
+               0.26 * cm, fill=1, stroke=0)
+        c.setFont(FONT_B, 9)
+        c.drawRightString(D, Y(yy), "Favorable" if favorable else "Vigilance")
+        yy += pas
+    y += h_fac + ecart
 
     # === CONDITIONS / RECOMMANDATIONS ====================================
-    y += 0.3
-    titre_bloc, lignes = _conditions_ou_recommandations(accorde, facteurs, ratios)
-    paras = [_paragraphe(l, taille=8.5, interligne=11.5, couleur=INK, align=0) for l in lignes]
-    hauteurs = [p.wrap(largeur - 1.2 * cm, 3 * cm)[1] for p in paras]
-    h_bloc = 0.75 * cm + sum(hauteurs) + 0.12 * cm * len(paras) + 0.25 * cm
     c.setFillColor(FOND)
     c.roundRect(G, Y(y) - h_bloc, largeur, h_bloc, 5, fill=1, stroke=0)
     c.setFillColor(INK)
-    c.setFont(FONT_B, 9)
-    c.drawString(G + 0.4 * cm, Y(y) - 0.5 * cm, titre_bloc)
-    yy = Y(y) - 0.75 * cm
+    c.setFont(FONT_B, 9.5)
+    c.drawString(G + 0.45 * cm, Y(y) - 0.55 * cm, titre_bloc)
+    yb = Y(y) - 0.85 * cm
     for p, h in zip(paras, hauteurs):
         c.setFillColor(BLEU)
-        c.circle(G + 0.5 * cm, yy - 0.2 * cm, 0.05 * cm, fill=1, stroke=0)
-        p.drawOn(c, G + 0.8 * cm, yy - h)
-        yy -= h + 0.12 * cm
+        c.circle(G + 0.55 * cm, yb - 0.22 * cm, 0.05 * cm, fill=1, stroke=0)
+        p.drawOn(c, G + 0.85 * cm, yb - h)
+        yb -= h + 0.2 * cm
 
     # === SIGNATURES + AUTHENTICITE =======================================
-    bas, h_sign = 2.6 * cm, 2.9 * cm
+    bas, h_sign = BAS_SIGNATURES, HAUTEUR_SIGNATURES
     blocs = [("Agent de crédit", f"Nom : {agent_nom}", "Signature :"),
              ("Responsable des engagements", "Nom :", "Visa et cachet de l'agence :")]
     lb = 5.6 * cm
@@ -597,7 +615,7 @@ def generer_pdf_decision(analyse, client, agent_nom: str) -> bytes:
     qr_taille = 2.1 * cm
     ax = G + 2 * (lb + 0.35 * cm) + 0.15 * cm
     url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/") + f"/analyse/{analyse.id}"
-    _qr(c, url, D - qr_taille, bas + 0.3 * cm, qr_taille)
+    _qr(c, url, D - qr_taille, bas + (h_sign - qr_taille) / 2, qr_taille)
     c.setFillColor(INK)
     c.setFont(FONT_B, 8)
     c.drawString(ax, bas + h_sign - 0.5 * cm, "Authenticité")
