@@ -9,15 +9,29 @@ import {
   getConversations, creerConversation, getConversation,
   envoyerMessageFlux, supprimerConversation,
 } from "../services/chatbotService";
+import { telechargerPdf } from "../services/analyseService";
 import {
-  Send, Sparkles, Plus, Trash2, MessageSquare, Menu, Loader2, Search, FileSearch,
+  Send, Sparkles, Plus, Trash2, MessageSquare, Menu, Loader2, Search, FileSearch, FileDown,
 } from "lucide-react";
 
+// CrediBot insère [PDF:42] dans sa réponse pour proposer la fiche de
+// l'analyse n°42 : on retire ces marqueurs du texte et on affiche un bouton.
+const MOTIF_PDF = /\[PDF:(\d+)\]/g;
+const MAX_BOUTONS_PDF = 3;
+
+function extrairePdf(contenu, enCours) {
+  const ids = [...new Set([...contenu.matchAll(MOTIF_PDF)].map((m) => m[1]))].slice(0, MAX_BOUTONS_PDF);
+  let texte = contenu.replace(MOTIF_PDF, "");
+  // Pendant l'écriture, un marqueur peut être à moitié arrivé ("[PDF:4")
+  if (enCours) texte = texte.replace(/\[(P(D(F(:\d*)?)?)?)?$/, "");
+  return { texte: texte.trim(), ids };
+}
+
 const SUGGESTIONS = [
-  "Combien de crédits ont été accordés ?",
-  "Quel client a le risque le plus élevé ?",
-  "Combien de clients avons-nous ?",
-  "Quelle est la répartition des risques ?",
+  "Donne-moi la liste des clients",
+  "Quel est le client le plus dangereux ?",
+  "Quel est le client le plus stable ?",
+  "Donne-moi la fiche PDF du client le plus dangereux",
 ];
 
 function grouperParDate(conversations) {
@@ -317,8 +331,40 @@ export default function AssistantPage() {
   );
 }
 
+function BoutonPdf({ analyseId, isDark }) {
+  const [etat, setEtat] = useState("pret"); // pret | chargement | erreur
+
+  async function telecharger() {
+    setEtat("chargement");
+    try {
+      const blob = await telechargerPdf(analyseId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `fiche_decision_${analyseId}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      setEtat("pret");
+    } catch {
+      setEtat("erreur");
+    }
+  }
+
+  return (
+    <button onClick={telecharger} disabled={etat === "chargement"}
+      className={"inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition disabled:opacity-60 " +
+        (isDark ? "border-zinc-700 text-zinc-200 hover:bg-zinc-800" : "border-gray-200 text-gray-700 hover:bg-gray-50")}>
+      {etat === "chargement"
+        ? <Loader2 size={14} className="animate-spin" style={{ color: "#2E86C1" }} />
+        : <FileDown size={14} style={{ color: "#2E86C1" }} />}
+      {etat === "erreur"
+        ? `Fiche n°${analyseId} indisponible`
+        : `Télécharger la fiche PDF (analyse n°${analyseId})`}
+    </button>
+  );
+}
+
 function MessageClaude({ msg, isDark }) {
   const estUser = msg.role === "user";
+  const { texte, ids } = estUser ? { texte: msg.contenu, ids: [] } : extrairePdf(msg.contenu || "", msg.enCours);
   return (
     <div className="flex gap-3">
       <div className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
@@ -335,16 +381,21 @@ function MessageClaude({ msg, isDark }) {
           <div className={"text-sm leading-relaxed whitespace-pre-wrap " + (isDark ? "text-zinc-200" : "text-gray-700")}>
             {msg.contenu}
           </div>
-        ) : msg.enCours && !msg.contenu ? (
+        ) : msg.enCours && !texte ? (
           // En attente du premier morceau de la réponse
           <Loader2 size={18} className="animate-spin mt-1" style={{ color: "#2E86C1" }} />
         ) : (
           <div className={"text-sm leading-relaxed markdown-chat " + (isDark ? "text-zinc-200" : "text-gray-700")}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.contenu}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{texte}</ReactMarkdown>
             {msg.enCours && (
               // Curseur clignotant pendant que CrediBot écrit
               <span className="inline-block w-2 h-4 align-middle animate-pulse rounded-sm"
                 style={{ backgroundColor: "#2E86C1" }} />
+            )}
+            {!msg.enCours && ids.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {ids.map((id) => <BoutonPdf key={id} analyseId={id} isDark={isDark} />)}
+              </div>
             )}
           </div>
         )}
