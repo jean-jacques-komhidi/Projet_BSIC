@@ -195,3 +195,73 @@ def test_route_flux_envoie_et_enregistre_la_reponse(db, monkeypatch):
     messages = db.query(models.Message).filter(models.Message.conversation_id == conv.id).all()
     assert [m.role for m in messages] == ["user", "assistant"]
     assert messages[1].contenu == "Achta Mahamat a un risque faible."
+
+
+# --- Listes, historique, classement, PDF ------------------------------------
+
+def _analyse_datee(db, client, proba, decision, risque, jours, reel=None):
+    from datetime import datetime, timedelta
+    a = models.Analyse(client_id=client.id, probabilite_defaut=proba, decision=decision,
+                       classe_risque=risque, resultat_reel=reel,
+                       date_analyse=datetime(2026, 1, 1) + timedelta(days=jours))
+    db.add(a)
+    db.commit()
+    return a
+
+
+def _contexte_global(db, question="Bonjour"):
+    ps = Pseudonymes(db.query(models.Client.id, models.Client.nom).all())
+    return construire_contexte(db, ps, question)
+
+
+def test_classement_client_le_plus_dangereux(db):
+    sur = _client(db, "Client Sur")
+    _analyse_datee(db, sur, 0.10, "ACCORDE", "faible", 1)
+    risque = _client(db, "Client Risque")
+    _analyse_datee(db, risque, 0.20, "ACCORDE", "faible", 1)
+    _analyse_datee(db, risque, 0.91, "REFUSE", "eleve", 5)   # derniere analyse : 91 %
+
+    contexte = _contexte_global(db)
+    bloc = contexte.split("Les plus dangereux")[1].split("Les plus stables")[0]
+    premiere = bloc.strip().splitlines()[1]
+    assert f"Client#{risque.id}" in premiere and "91.0 %" in premiere
+
+
+def test_classement_stable_prefere_un_client_suivi_plusieurs_fois(db):
+    unique = _client(db, "Vu Une Fois")
+    _analyse_datee(db, unique, 0.05, "ACCORDE", "faible", 1)
+    fidele = _client(db, "Client Fidele")
+    _analyse_datee(db, fidele, 0.15, "ACCORDE", "faible", 1, reel="rembourse")
+    _analyse_datee(db, fidele, 0.12, "ACCORDE", "faible", 9)
+    defaut = _client(db, "Deja Defaut")
+    _analyse_datee(db, defaut, 0.01, "ACCORDE", "faible", 1, reel="defaut")
+
+    bloc = _contexte_global(db).split("Les plus stables")[1].split("\n\n")[0]
+    lignes = [l for l in bloc.splitlines() if l.startswith("- ")]
+    assert len(lignes) == 2
+    assert f"Client#{fidele.id}" in lignes[0]        # suivi 2 fois : en tete
+    assert f"Client#{unique.id}" in lignes[1]
+    assert all(f"Client#{defaut.id}" not in l for l in lignes)  # a fait defaut : exclu
+
+
+def test_historique_complet_et_tendance(db):
+    c = _client(db, "Ousmane Brahim")
+    for i in range(8):
+        _analyse_datee(db, c, 0.30 + i * 0.05, "ACCORDE", "faible", i)
+    contexte = _contexte_global(db, "Quel est l'historique de Ousmane Brahim ?")
+    fiche = contexte.split("FICHES DES CLIENTS CITES")[1].split("LISTE DES CLIENTS")[0]
+    assert fiche.count("analyse N ") == 8
+    assert "tendance : risque en hausse" in fiche
+
+
+def test_liste_indique_le_nombre_d_analyses_et_le_numero(db):
+    c = _client(db, "Halime Adoum")
+    a = _analyse_datee(db, c, 0.40, "ACCORDE", "moyen", 1)
+    _analyse_datee(db, c, 0.45, "ACCORDE", "moyen", 0)
+    liste = _contexte_global(db).split("LISTE DES CLIENTS")[1]
+    assert f"2 analyse(s), derniere : N {a.id}" in liste
+
+
+def test_prompt_explique_le_bouton_pdf():
+    assert "[PDF:" in PROMPT_SYSTEME
+    assert "DERNIERE analyse" in PROMPT_SYSTEME

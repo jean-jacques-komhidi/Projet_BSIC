@@ -33,13 +33,16 @@ MODELE_LLM = "openai/gpt-oss-120b"
 # garder une latence et une consommation de tokens raisonnables).
 MAX_HISTORIQUE = 10
 
-# Apercu des clients recents envoye a chaque question (les clients cites par
-# leur nom sont TOUJOURS ajoutes en plus, quel que soit leur nombre total).
-NB_CLIENTS_APERCU = 40
+# Liste des clients envoyee a chaque question (une ligne courte par client).
+# Au-dela, seuls les plus recents sont listes ; les clients cites par leur nom
+# sont TOUJOURS ajoutes en plus, et le classement porte sur TOUS les clients.
+NB_CLIENTS_APERCU = 200
 # Nombre maximal de fiches detaillees (clients cites) par question.
 NB_FICHES_MAX = 5
-# Nombre d'analyses detaillees par fiche client.
-NB_ANALYSES_PAR_FICHE = 5
+# Nombre d'analyses detaillees par fiche client (historique).
+NB_ANALYSES_PAR_FICHE = 20
+# Nombre de clients dans chaque classement (plus dangereux / plus stables).
+NB_CLASSEMENT = 3
 
 
 # ---------------------------------------------------------------------------
@@ -238,42 +241,124 @@ def _description_client(c) -> str:
     return f"{prof}, {age}"
 
 
-def _fiches_clients(db: Session, ids: list) -> str:
-    """Fiches detaillees des clients cites dans la question."""
+def _date(a) -> str:
+    return a.date_analyse.strftime("%d/%m/%Y") if a.date_analyse else "date inconnue"
+
+
+def _analyses_par_client(db: Session) -> dict:
+    """Toutes les analyses, regroupees par client, de la plus recente a la
+    plus ancienne (une seule requete pour tous les clients)."""
+    analyses = (
+        db.query(models.Analyse)
+        .filter(models.Analyse.client_id.isnot(None))
+        .order_by(models.Analyse.date_analyse.desc(), models.Analyse.id.desc())
+        .all()
+    )
+    par_client = {}
+    for a in analyses:
+        par_client.setdefault(a.client_id, []).append(a)
+    return par_client
+
+
+def _tendance(analyses: list) -> str:
+    """Evolution du risque entre la premiere et la derniere analyse."""
+    if len(analyses) < 2:
+        return ""
+    ecart = (analyses[0].probabilite_defaut or 0) - (analyses[-1].probabilite_defaut or 0)
+    if abs(ecart) < 0.02:
+        return "  tendance : risque stable"
+    sens = "en hausse" if ecart > 0 else "en baisse"
+    return (f"  tendance : risque {sens} ({_pct(analyses[-1].probabilite_defaut)} a la premiere "
+            f"analyse, {_pct(analyses[0].probabilite_defaut)} a la derniere)")
+
+
+def _fiches_clients(db: Session, ids: list, par_client: dict) -> str:
+    """Fiches detaillees (historique complet) des clients cites dans la question."""
     if not ids:
         return ""
     clients = {c.id: c for c in db.query(models.Client).filter(models.Client.id.in_(ids)).all()}
-    blocs = ["FICHES DES CLIENTS CITES DANS LA QUESTION :"]
+    blocs = ["FICHES DES CLIENTS CITES DANS LA QUESTION (historique, de la plus recente a la plus ancienne) :"]
     for cid in ids:
         c = clients.get(cid)
         if not c:
             continue
-        analyses = (
-            db.query(models.Analyse)
-            .filter(models.Analyse.client_id == cid)
-            .order_by(models.Analyse.date_analyse.desc())
-            .limit(NB_ANALYSES_PAR_FICHE)
-            .all()
-        )
+        toutes = par_client.get(cid, [])
+        analyses = toutes[:NB_ANALYSES_PAR_FICHE]
         lignes = [f"- {Pseudonymes.jeton(cid)} ({_description_client(c)}"
-                  f"{', situation : ' + c.situation_familiale if c.situation_familiale else ''})"]
+                  f"{', situation : ' + c.situation_familiale if c.situation_familiale else ''})"
+                  f" : {len(toutes)} analyse(s)"]
         if not analyses:
             lignes.append("  aucune analyse")
         for a in analyses:
-            date = a.date_analyse.strftime("%d/%m/%Y") if a.date_analyse else "date inconnue"
             lignes.append(
-                f"  analyse N {a.id} du {date} : decision {a.decision}, risque {a.classe_risque}, "
+                f"  analyse N {a.id} du {_date(a)} : decision {a.decision}, risque {a.classe_risque}, "
                 f"probabilite de defaut {_pct(a.probabilite_defaut)}, issue reelle {_issue(a.resultat_reel)}"
             )
+        if len(toutes) > len(analyses):
+            lignes.append(f"  ... et {len(toutes) - len(analyses)} analyse(s) plus ancienne(s)")
+        tendance = _tendance(analyses)
+        if tendance:
+            lignes.append(tendance)
         blocs.append("\n".join(lignes))
     return "\n".join(blocs)
 
 
-def _apercu_clients(db: Session, total_clients: int) -> str:
-    """Apercu des clients les plus recents avec leur derniere analyse.
+def _a_fait_defaut(analyses: list) -> bool:
+    return any(_normaliser(a.resultat_reel).startswith("defaut") for a in analyses)
 
-    Chargement en 2 requetes au lieu de N+1 : toutes les analyses des clients
-    sont recuperees en une fois, puis la plus recente est retenue par client."""
+
+def _classement(par_client: dict) -> str:
+    """Classement des clients les plus dangereux et les plus stables, calcule
+    sur TOUS les clients avec des regles fixes (le chatbot ne fait que le
+    commenter, il ne devine rien).
+
+    - Plus dangereux : probabilite de defaut de la DERNIERE analyse la plus
+      elevee ; a egalite, un client ayant deja fait defaut passe devant.
+    - Plus stable : parmi les clients sans aucun defaut reel et dont toutes
+      les analyses ont ete accordees, ceux suivis au moins 2 fois passent
+      devant ; puis probabilite de defaut de la derniere analyse la plus basse.
+    """
+    if not par_client:
+        return ""
+
+    def ligne(cid, analyses):
+        derniere = analyses[0]
+        extra = ", a deja fait DEFAUT" if _a_fait_defaut(analyses) else ""
+        return (f"- {Pseudonymes.jeton(cid)} : derniere analyse N {derniere.id} du {_date(derniere)}, "
+                f"probabilite de defaut {_pct(derniere.probabilite_defaut)}, "
+                f"decision {derniere.decision}, {len(analyses)} analyse(s){extra}")
+
+    dangereux = sorted(
+        par_client.items(),
+        key=lambda x: (-(x[1][0].probabilite_defaut or 0), not _a_fait_defaut(x[1])),
+    )[:NB_CLASSEMENT]
+
+    candidats_stables = [
+        (cid, an) for cid, an in par_client.items()
+        if not _a_fait_defaut(an) and all(_normaliser(a.decision).startswith("accord") for a in an)
+    ]
+    stables = sorted(
+        candidats_stables,
+        key=lambda x: (0 if len(x[1]) >= 2 else 1, x[1][0].probabilite_defaut or 0),
+    )[:NB_CLASSEMENT]
+
+    lignes = [
+        "CLASSEMENT DES CLIENTS (calcule sur tous les clients) :",
+        "Les plus dangereux (probabilite de defaut de la derniere analyse la plus elevee ; "
+        "a egalite, un defaut reel passe devant) :",
+    ]
+    lignes += [ligne(cid, an) for cid, an in dangereux]
+    lignes.append("Les plus stables (aucun defaut reel, toutes les analyses accordees ; "
+                  "clients suivis au moins 2 fois en priorite, puis probabilite la plus basse) :")
+    if stables:
+        lignes += [ligne(cid, an) for cid, an in stables]
+    else:
+        lignes.append("- aucun client ne remplit ces conditions pour l'instant")
+    return "\n".join(lignes)
+
+
+def _liste_clients(db: Session, total_clients: int, par_client: dict) -> str:
+    """Liste des clients (les plus recents d'abord) avec leur derniere analyse."""
     clients = (
         db.query(models.Client)
         .order_by(models.Client.date_creation.desc(), models.Client.id.desc())
@@ -283,27 +368,17 @@ def _apercu_clients(db: Session, total_clients: int) -> str:
     if not clients:
         return "Aucun client enregistre."
 
-    ids = [c.id for c in clients]
-    analyses = (
-        db.query(models.Analyse)
-        .filter(models.Analyse.client_id.in_(ids))
-        .order_by(models.Analyse.date_analyse.desc())
-        .all()
-    )
-    derniere_par_client = {}
-    for a in analyses:
-        if a.client_id not in derniere_par_client:
-            derniere_par_client[a.client_id] = a
-
-    titre = "APERCU DES CLIENTS (avec leur derniere analyse)"
+    titre = f"LISTE DES CLIENTS ({total_clients} au total, avec leur derniere analyse)"
     if total_clients > len(clients):
-        titre += (f" - seuls les {len(clients)} plus recents sur {total_clients} sont listes ; "
+        titre += (f" - seuls les {len(clients)} plus recents sont listes ; "
                   "pour un autre client, l'agent doit citer son nom")
     lignes = [titre + " :"]
     for c in clients:
-        a = derniere_par_client.get(c.id)
-        if a:
-            infos = (f"decision {a.decision}, risque {a.classe_risque}, "
+        analyses = par_client.get(c.id, [])
+        if analyses:
+            a = analyses[0]
+            infos = (f"{len(analyses)} analyse(s), derniere : N {a.id} du {_date(a)}, "
+                     f"decision {a.decision}, risque {a.classe_risque}, "
                      f"probabilite de defaut {_pct(a.probabilite_defaut)}, "
                      f"issue reelle {_issue(a.resultat_reel)}")
         else:
@@ -377,6 +452,18 @@ TON COMPORTEMENT :
 - REGLE ABSOLUE SUR LE HTML : n'utilise JAMAIS de balises HTML, en particulier JAMAIS de <br>, <table>, <div> ou <ul>. L'interface n'affiche pas le HTML.
 - REGLE SUR LES TABLEAUX : n'utilise un tableau Markdown QUE lorsque chaque cellule tient en une seule ligne courte. Sinon, structure ta reponse en sections avec des puces "- ". Ne mets jamais de <br> ni de puces dans une cellule.
 
+LISTES, HISTORIQUES ET CLASSEMENTS :
+- Pour lister des clients (tous, ou filtres par decision, par niveau de risque ou par issue reelle), appuie-toi sur la LISTE DES CLIENTS du contexte. Indique le nombre de clients concernes. Si la liste est longue, presente-la de facon compacte (une ligne par client).
+- Pour l'historique d'un client, appuie-toi sur sa FICHE : presente ses analyses dans l'ordre chronologique et commente la tendance de son risque.
+- Pour le client le plus dangereux ou le plus stable, utilise UNIQUEMENT le CLASSEMENT DES CLIENTS du contexte, et explique en une phrase la regle utilisee. Ne refais jamais ce classement toi-meme.
+
+FICHE PDF A TELECHARGER :
+L'interface sait afficher un bouton de telechargement de la fiche de decision PDF d'une analyse. Pour le faire apparaitre, ecris sur une ligne seule, a la fin de ta reponse : [PDF:numero] (exemple : [PDF:42]), avec le numero d'une analyse presente dans le contexte.
+- Mets-le quand on te demande une fiche, un PDF, un document ou un rapport sur un client ou une analyse. Pour un client, utilise sa DERNIERE analyse.
+- Tu peux aussi le proposer quand tu presentes le client le plus dangereux ou le plus stable.
+- Maximum 3 boutons par reponse. N'invente jamais de numero d'analyse ; si le client n'a aucune analyse, dis qu'il n'y a pas encore de fiche.
+- Ne dis pas que tu "envoies" un fichier : dis que la fiche est disponible au telechargement ci-dessous.
+
 CONFIDENTIALITE DES CLIENTS :
 Les clients sont designes par un identifiant de la forme Client#12. Ecris TOUJOURS cet identifiant exactement sous cette forme (Client# suivi du numero, sans espace) pour parler d'un client : l'interface le remplace automatiquement par son vrai nom. N'essaie jamais de deviner ou d'inventer le nom d'un client.
 
@@ -424,8 +511,11 @@ def construire_contexte(db: Session, ps: Pseudonymes, question: str,
                 if cid not in cites:
                     cites.append(cid)
         total_clients = db.query(models.Client).count()
-        morceaux = [_statistiques(db), _fiches_clients(db, cites[:NB_FICHES_MAX]),
-                    _apercu_clients(db, total_clients)]
+        par_client = _analyses_par_client(db)
+        morceaux = [_statistiques(db),
+                    _classement(par_client),
+                    _fiches_clients(db, cites[:NB_FICHES_MAX], par_client),
+                    _liste_clients(db, total_clients, par_client)]
         contexte = "\n\n".join(m for m in morceaux if m)
 
     utilisateur_txt = _contexte_utilisateur(utilisateur)
