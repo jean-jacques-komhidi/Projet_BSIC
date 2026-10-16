@@ -29,6 +29,14 @@ class AnalyseReponse(BaseModel):
     resultat_reel: Optional[str] = None
     model_version_id: Optional[int] = None
     date_analyse: datetime
+    nom_agent: Optional[str] = None
+    montant: Optional[float] = None              # montant demande (AMT_CREDIT)
+    detail: Optional[dict] = None                # dossier, indicateurs, historique (vue detail)
 
     class Config:
         from_attributes = True
+
+class SimulationDemande(BaseModel):
+    """Conditions a tester sur un dossier existant (rien n'est enregistre)."""
+    montant: float = Field(..., gt=0, description="Montant du credit, en FCFA")
+    duree_mois: int = Field(..., ge=3, le=120, description="Nombre d'echeances mensuelles")

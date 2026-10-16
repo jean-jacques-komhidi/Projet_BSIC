@@ -56,6 +56,13 @@ class ServiceModele:
         X = self._dataframe(dossier)
         return float(self.pipeline.predict_proba(X)[0, 1])
 
+    def predire_lot(self, dossiers: list) -> list:
+        """Probabilites de defaut de plusieurs dossiers en un seul appel au modele."""
+        if not dossiers:
+            return []
+        X = pd.DataFrame([{c: d.get(c) for c in COLONNES} for d in dossiers])
+        return [float(p) for p in self.pipeline.predict_proba(X)[:, 1]]
+
     def classe_risque(self, proba: float) -> str:
         if proba < SEUIL_RISQUE_FAIBLE:
             return "faible"

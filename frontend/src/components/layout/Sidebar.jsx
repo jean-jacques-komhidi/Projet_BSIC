@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
 import { useNotifications } from "../../context/NotificationsContext";
 import { useAuth } from "../../context/AuthContext";
@@ -17,6 +17,9 @@ export default function Sidebar() {
   const { unreadCount } = useNotifications();
   const { utilisateur, deconnexion } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Le detail d'une analyse (/analyse/12) appartient a l'historique
+  const { pathname } = useLocation();
+  const dansDetail = /^\/analyse\/\d+/.test(pathname);
 
   const initiales = utilisateur?.nom
     ? utilisateur.nom.split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase()
@@ -42,11 +45,13 @@ export default function Sidebar() {
   const Lien = ({ to, icone: Icone, children, onClose, badge }) => (
     <NavLink
       to={to}
-      end={to === "/tableau-de-bord"}
+      end={to === "/tableau-de-bord" || to === "/analyse"}
       onClick={onClose}
       className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
     >
-      {({ isActive }) => (
+      {({ isActive: actifRoute }) => {
+        const isActive = actifRoute || (to === "/historique" && dansDetail);
+        return (
         <span className="flex items-center gap-3 w-full rounded-lg px-1"
           style={{ color: isActive ? BLEU : (isDark ? "#a1a1aa" : "#6b7280") }}>
           <Icone size={17} style={{ color: isActive ? BLEU : "currentColor" }} />
@@ -57,7 +62,8 @@ export default function Sidebar() {
             </span>
           )}
         </span>
-      )}
+        );
+      }}
     </NavLink>
   );
 

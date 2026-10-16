@@ -101,9 +101,9 @@ FONT, FONT_B = _enregistrer_polices()
 # Libelles et valeurs lisibles
 # ---------------------------------------------------------------------------
 LIBELLES_NUM = {
-    "EXT_SOURCE_1": "Score externe 1",
-    "EXT_SOURCE_2": "Score externe 2",
-    "EXT_SOURCE_3": "Score externe 3",
+    "EXT_SOURCE_1": "Note de solvabilité externe 1",
+    "EXT_SOURCE_2": "Note de solvabilité externe 2",
+    "EXT_SOURCE_3": "Note de solvabilité externe 3",
     "AMT_INCOME_TOTAL": "Revenu",
     "AMT_CREDIT": "Montant du crédit",
     "AMT_ANNUITY": "Montant de l'échéance",
@@ -111,7 +111,7 @@ LIBELLES_NUM = {
     "AGE_ANNEES": "Âge",
     "ANCIENNETE_EMPLOI_ANNEES": "Ancienneté d'emploi",
     "CNT_CHILDREN": "Nombre d'enfants",
-    "CNT_FAM_MEMBERS": "Taille du foyer",
+    "CNT_FAM_MEMBERS": "Personnes dans le foyer",
     "EMPLOI_ANORMAL": "Sans emploi salarié",
 }
 LIBELLES_CAT = {
@@ -133,6 +133,20 @@ CATEGORIES = {
     "Unemployed": "Sans emploi", "Student": "Étudiant", "Businessman": "Entrepreneur",
     "Cash loans": "Crédit de trésorerie", "Revolving loans": "Crédit renouvelable",
     "Laborers": "Ouvrier", "Government": "Administration publique",
+    # Professions
+    "Accountants": "Comptable", "Core staff": "Personnel qualifié", "Managers": "Cadre",
+    "Drivers": "Chauffeur", "Sales staff": "Commercial", "High skill tech staff": "Technicien qualifié",
+    "Medicine staff": "Personnel de santé", "Security staff": "Agent de sécurité",
+    "Cooking staff": "Restauration", "Cleaning staff": "Agent d'entretien",
+    "Private service staff": "Services aux particuliers", "Low-skill Laborers": "Manœuvre",
+    "Secretaries": "Secrétaire", "Waiters/barmen staff": "Serveur", "Realty agents": "Agent immobilier",
+    "HR staff": "Ressources humaines", "IT staff": "Informatique",
+    # Employeurs
+    "School": "Enseignement", "Self-employed": "Indépendant", "Medicine": "Santé",
+    "Business Entity Type 3": "Entreprise privée", "Business Entity Type 2": "Entreprise privée",
+    "Business Entity Type 1": "Entreprise privée", "Trade: type 7": "Commerce",
+    "Construction": "Bâtiment", "Transport: type 4": "Transport", "Bank": "Banque",
+    "Military": "Armée", "Police": "Police", "Agriculture": "Agriculture",
 }
 # Variables jamais presentees comme facteur de decision sur la fiche
 VARIABLES_EXCLUES = ("CODE_GENDER",)

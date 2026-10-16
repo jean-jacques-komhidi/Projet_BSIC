@@ -75,7 +75,10 @@ def dossier(qualite: float, montant: int = None, age: int = None) -> dict:
     montant = montant or _montant()
     duree = random.choice([12, 18, 24, 36, 48, 60])
     ext = lambda: round(min(max(random.gauss(0.15 + 0.6 * qualite, 0.1), 0.02), 0.95), 2)
-    revenu = round(random.randint(80_000, 250_000) + qualite * random.randint(100_000, 500_000), -3)
+    echeance = round(montant / duree * random.uniform(1.05, 1.2), -3)
+    # Revenu deduit d'un taux d'endettement realiste (environ 20 % a 70 %)
+    endettement = min(max(random.gauss(0.45 - 0.25 * qualite, 0.08), 0.15), 0.75)
+    revenu = max(round(echeance / endettement, -3), 60_000)
     return {
         "AGE_ANNEES": age or random.randint(23, 60),
         "CODE_GENDER": random.choice(["M", "F"]),
@@ -91,7 +94,7 @@ def dossier(qualite: float, montant: int = None, age: int = None) -> dict:
         "EMPLOI_ANORMAL": 0,
         "AMT_INCOME_TOTAL": revenu,
         "AMT_CREDIT": montant,
-        "AMT_ANNUITY": round(montant / duree * random.uniform(1.05, 1.2), -3),
+        "AMT_ANNUITY": echeance,
         "AMT_GOODS_PRICE": round(montant * random.uniform(0.9, 1.0), -4),
         "NAME_CONTRACT_TYPE": random.choice(["Cash loans", "Cash loans", "Revolving loans"]),
         "EXT_SOURCE_1": ext(), "EXT_SOURCE_2": ext(), "EXT_SOURCE_3": ext(),
@@ -202,7 +205,7 @@ def generer(ajouter=False):
             issue = _issue if anciennete > 30 and random.random() < 0.6 else None
             montant = _montant()
             # Les gros montants sont un peu plus risques, comme en pratique
-            qualite = random.betavariate(1.3, 1.5) - (0.12 if montant >= 5_000_000 else 0.05 if montant >= 3_000_000 else 0)
+            qualite = random.betavariate(1.15, 1.6) - (0.12 if montant >= 5_000_000 else 0.05 if montant >= 3_000_000 else 0)
             enregistrer(random.choice(autres), dossier(max(qualite, 0), montant=montant), date,
                         random.choice(utilisateurs), issue=issue)
         db.commit()
