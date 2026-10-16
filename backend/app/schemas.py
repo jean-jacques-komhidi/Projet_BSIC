@@ -40,9 +40,9 @@ class DossierCredit(BaseModel):
     NAME_CONTRACT_TYPE: str = Field(..., description="Type de contrat")
 
     # --- Proxy de centrale des risques ---
-    EXT_SOURCE_1: float = Field(None, ge=0, le=1, description="Score externe 1 (0 à 1)")
-    EXT_SOURCE_2: float = Field(None, ge=0, le=1, description="Score externe 2 (0 à 1)")
-    EXT_SOURCE_3: float = Field(None, ge=0, le=1, description="Score externe 3 (0 à 1)")
+    EXT_SOURCE_1: float = Field(None, ge=0, le=1, description="Note de solvabilité externe 1 (0 à 1)")
+    EXT_SOURCE_2: float = Field(None, ge=0, le=1, description="Note de solvabilité externe 2 (0 à 1)")
+    EXT_SOURCE_3: float = Field(None, ge=0, le=1, description="Note de solvabilité externe 3 (0 à 1)")
 
     class Config:
         json_schema_extra = {

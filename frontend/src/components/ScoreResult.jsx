@@ -6,24 +6,17 @@ import { useEffect, useState } from "react";
 // < 40%  → faible → vert
 // 40-70% → moyen  → ambre
 // > 70%  → élevé  → rouge
+// Couleurs de l'application : vert = faible, orange = moyen, rouge = eleve
+const VERT = "#0F6E56", ORANGE = "#d97706", ROUGE = "#c0392b";
 const getColor = (p) => {
-  if (p < 40) return "#059669";
-  if (p < 70) return "#d97706";
-  return "#dc2626";
+  if (p < 40) return VERT;
+  if (p < 70) return ORANGE;
+  return ROUGE;
 };
-const getProbaColor = (p) => {
-  if (p < 40) return "text-emerald-500";
-  if (p < 70) return "text-amber-500";
-  return "text-red-500";
-};
-const getBarColor = (p) => {
-  if (p < 40) return "bg-emerald-500";
-  if (p < 70) return "bg-amber-500";
-  return "bg-red-500";
-};
+const LIBELLE_RISQUE = { faible: "Faible", moyen: "Moyen", eleve: "Élevé" };
 
 // ── SPEEDOMETER ──
-function Speedometer({ proba, isDark }) {
+export function Speedometer({ proba, isDark }) {
   const [animated, setAnimated] = useState(0);
 
   useEffect(() => {
@@ -67,9 +60,9 @@ function Speedometer({ proba, isDark }) {
   ];
   // Zones adaptées à nos seuils
   const zones = [
-    { from: 180, to: 180 - (40 / 100) * 180, color: "#059669" },
-    { from: 180 - (40 / 100) * 180, to: 180 - (70 / 100) * 180, color: "#d97706" },
-    { from: 180 - (70 / 100) * 180, to: 0, color: "#dc2626" },
+    { from: 180, to: 180 - (40 / 100) * 180, color: VERT },
+    { from: 180 - (40 / 100) * 180, to: 180 - (70 / 100) * 180, color: ORANGE },
+    { from: 180 - (70 / 100) * 180, to: 0, color: ROUGE },
   ];
 
   const tickColor = isDark ? "#52524e" : "#9ca3af";
@@ -100,8 +93,7 @@ function Speedometer({ proba, isDark }) {
           const sy2 = cy - (r + 8) * Math.sin(seuilAngle);
           return (
             <g>
-              <line x1={sx1} y1={sy1} x2={sx2} y2={sy2} stroke="#dc2626" strokeWidth="2" strokeDasharray="3,2" />
-              <text x={sx2 + 2} y={sy2 - 4} fontSize="7" fill="#dc2626" textAnchor="middle">70%</text>
+              <line x1={sx1} y1={sy1} x2={sx2} y2={sy2} stroke={ROUGE} strokeWidth="2" strokeDasharray="3,2" />
             </g>
           );
         })()}
@@ -112,7 +104,7 @@ function Speedometer({ proba, isDark }) {
         <rect x={cx - 52} y={cy + 16} width="104" height="46" rx="8"
           fill={isDark ? "#09090b" : "#ffffff"} stroke={isDark ? "#27272a" : "#e5e7eb"} strokeWidth="1" />
         <text x={cx} y={cy + 38} textAnchor="middle" fontSize="24" fontWeight="bold" fill={color}
-          style={{ transition: "fill 0.3s" }}>{animated.toFixed(1)}%</text>
+          style={{ transition: "fill 0.3s" }}>{animated.toFixed(1).replace(".", ",")} %</text>
         <text x={cx} y={cy + 54} textAnchor="middle" fontSize="9" fill={tickColor}>Probabilité de défaut</text>
       </svg>
     </div>
@@ -120,88 +112,58 @@ function Speedometer({ proba, isDark }) {
 }
 
 // ── SCORE RESULT ──
-export default function ScoreResult({ result, onPdf }) {
+// texte : explication a afficher (par defaut, celle renvoyee par l'analyse)
+export default function ScoreResult({ result, onPdf, texte }) {
   const { isDark } = useTheme();
   if (!result) return null;
 
   const isAccorde = result.decision === "ACCORDE";
   const proba = Math.round(result.probabilite_defaut * 100 * 10) / 10; // en %, 1 décimale
-
-  // Config du niveau de risque (nos 3 niveaux)
-  const riskCfg = {
-    faible: { text: isDark ? "text-emerald-400" : "text-emerald-700", border: isDark ? "border-emerald-800" : "border-emerald-200" },
-    moyen: { text: isDark ? "text-amber-400" : "text-amber-700", border: isDark ? "border-amber-800" : "border-amber-200" },
-    eleve: { text: isDark ? "text-red-400" : "text-red-700", border: isDark ? "border-red-800" : "border-red-200" },
-  };
-  const rc = riskCfg[result.classe_risque] || riskCfg.moyen;
-
-  const decisionColor = isAccorde
-    ? (isDark ? "text-emerald-400 border-emerald-800" : "text-emerald-700 border-emerald-200")
-    : (isDark ? "text-red-400 border-red-800" : "text-red-700 border-red-200");
+  const couleurDecision = isAccorde ? VERT : ROUGE;
+  const niveau = LIBELLE_RISQUE[result.classe_risque] || result.classe_risque;
+  const explication = texte || result.explication;
 
   return (
     <div className={"rounded-2xl border overflow-hidden animate-fadeUp " +
       (isDark ? "bg-zinc-900 border-zinc-800" : "bg-white border-gray-100 shadow-sm")}>
       <div className="p-5 lg:p-6">
-        {/* Décision */}
-        <div className={"flex items-center justify-center gap-2.5 py-4 rounded-xl border mb-4 font-bold text-xl " + decisionColor}>
-          {isAccorde ? <CheckCircle size={24} /> : <XCircle size={24} />}
-          {isAccorde ? "CRÉDIT ACCORDÉ" : "CRÉDIT REFUSÉ"}
-        </div>
-
-        {/* Speedometer */}
-        <div className={"rounded-xl p-3 mb-4 " + (isDark ? "bg-zinc-800/40" : "bg-gray-50")}>
-          <Speedometer proba={proba} isDark={isDark} />
-        </div>
-
-        {/* Légende des seuils */}
-        <div className={"rounded-xl px-4 py-2.5 mb-4 flex items-center justify-around flex-wrap gap-2 " +
-          (isDark ? "bg-zinc-800/40" : "bg-gray-50")}>
-          {[
-            { label: "Faible", color: "bg-emerald-500", range: "< 40%" },
-            { label: "Moyen", color: "bg-amber-500", range: "40-70%" },
-            { label: "Élevé", color: "bg-red-500", range: "> 70%" },
-          ].map((z) => (
-            <div key={z.label} className="flex items-center gap-1.5">
-              <span className={"w-2 h-2 rounded-full " + z.color} />
-              <span className={"text-xs " + (isDark ? "text-zinc-400" : "text-gray-500")}>
-                {z.label} <span className={isDark ? "text-zinc-600" : "text-gray-400"}>({z.range})</span>
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Niveau de risque */}
-        <div className={"rounded-xl border px-4 py-3 mb-4 flex items-center justify-between " +
-          (isDark ? "border-zinc-800" : "border-gray-100")}>
-          <div>
-            <p className={"text-xs uppercase tracking-wider mb-0.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>Niveau de risque</p>
-            <p className={"font-bold text-base capitalize " + rc.text}>{result.classe_risque}</p>
-          </div>
-          <span className={"text-xs px-2.5 py-1 rounded-full border font-medium capitalize " + rc.text + " " + rc.border}>
-            {result.classe_risque}
+        {/* Décision et niveau de risque */}
+        <div className="flex flex-col items-center justify-center gap-1 py-4 rounded-xl border mb-4"
+          style={{ borderColor: couleurDecision + "55", backgroundColor: couleurDecision + (isDark ? "1f" : "0d") }}>
+          <span className="flex items-center gap-2.5 font-bold text-xl"
+            style={{ color: isDark ? (isAccorde ? "#34d399" : "#f87171") : couleurDecision }}>
+            {isAccorde ? <CheckCircle size={24} /> : <XCircle size={24} />}
+            {isAccorde ? "CRÉDIT ACCORDÉ" : "CRÉDIT REFUSÉ"}
+          </span>
+          <span className={"text-xs " + (isDark ? "text-zinc-400" : "text-gray-500")}>
+            Risque {niveau ? niveau.toLowerCase() : "—"}, seuil de refus à 70 %
           </span>
         </div>
 
-        {/* Explication en langage naturel */}
-        {result.explication && (
-          <div className={"rounded-xl p-3.5 mb-4 text-xs leading-relaxed " +
-            (isDark ? "bg-zinc-800/40 text-zinc-300" : "bg-gray-50 text-gray-600")}>
-            {result.explication}
-          </div>
-        )}
-
-        {/* Barre de risque avec seuil */}
-        <div className="mb-4">
-          <div className="flex justify-between text-xs mb-1.5">
-            <span className={isDark ? "text-zinc-500" : "text-gray-400"}>Risque de défaut</span>
-            <span className={"font-medium " + getProbaColor(proba)}>{proba}%</span>
-          </div>
-          <div className={"relative w-full h-2 rounded-full " + (isDark ? "bg-zinc-800" : "bg-gray-100")}>
-            <div className={"h-2 rounded-full transition-all duration-1000 " + getBarColor(proba)} style={{ width: proba + "%" }} />
-            <div className="absolute top-0 h-2 w-0.5 bg-red-500 opacity-70" style={{ left: "70%" }} title="Seuil : 70%" />
+        {/* Jauge */}
+        <div className={"rounded-xl p-3 mb-4 " + (isDark ? "bg-zinc-800/40" : "bg-gray-50")}>
+          <Speedometer proba={proba} isDark={isDark} />
+          <div className="flex items-center justify-center flex-wrap gap-x-5 gap-y-1 pt-1">
+            {[
+              { label: "Faible", color: VERT, range: "moins de 40 %" },
+              { label: "Moyen", color: ORANGE, range: "40 à 70 %" },
+              { label: "Élevé", color: ROUGE, range: "70 % et plus" },
+            ].map((z) => (
+              <span key={z.label} className={"flex items-center gap-1.5 text-xs " + (isDark ? "text-zinc-400" : "text-gray-500")}>
+                <span className="w-2 h-2 rounded-full" style={{ background: z.color }} />
+                {z.label} <span className={isDark ? "text-zinc-600" : "text-gray-400"}>({z.range})</span>
+              </span>
+            ))}
           </div>
         </div>
+
+        {/* Explication en langage naturel */}
+        {explication && (
+          <div className={"rounded-xl p-3.5 text-xs leading-relaxed " + (onPdf ? "mb-4 " : "") +
+            (isDark ? "bg-zinc-800/40 text-zinc-300" : "bg-gray-50 text-gray-600")}>
+            {explication}
+          </div>
+        )}
 
         {/* Bouton PDF */}
         {onPdf && (

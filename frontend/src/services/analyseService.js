@@ -41,3 +41,15 @@ export async function renseignerResultat(analyseId, resultat) {
   });
   return reponse.data;
 }
+// Simuler d'autres conditions (montant, durée) sur une analyse : rien n'est enregistré
+export async function simulerAnalyse(analyseId, montant, dureeMois) {
+  const reponse = await api.post(`/analyses/${analyseId}/simulation`, {
+    montant, duree_mois: dureeMois,
+  });
+  return reponse.data;
+}
+
+// Supprimer définitivement une analyse (administrateur)
+export async function supprimerAnalyse(analyseId) {
+  await api.delete(`/analyses/${analyseId}`);
+}

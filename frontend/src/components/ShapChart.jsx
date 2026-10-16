@@ -16,9 +16,12 @@ function libelle(v) {
   return v.replace(/_/g, " ");
 }
 
-export default function ShapChart({ result }) {
+// facteurs : liste deja preparee par l'API ({ libelle, valeur, contribution }),
+// sinon les facteurs bruts de l'analyse. Le genre n'est jamais affiche.
+export default function ShapChart({ result, facteurs: prepares }) {
   const { isDark } = useTheme();
-  const facteurs = result.facteurs_explicatifs || [];
+  const facteurs = prepares ||
+    (result.facteurs_explicatifs || []).filter((f) => !String(f.variable).startsWith("CODE_GENDER"));
   if (facteurs.length === 0) return null;
 
   const maxContrib = Math.max(...facteurs.map((f) => Math.abs(f.contribution)), 0.001);
@@ -44,10 +47,13 @@ export default function ShapChart({ result }) {
             <div key={i}>
               <div className="flex justify-between items-center mb-1">
                 <span className={"text-xs " + (isDark ? "text-zinc-300" : "text-gray-700")}>
-                  {libelle(f.variable)}
+                  {f.libelle || libelle(f.variable)}
+                  {f.valeur && f.valeur !== "—" && (
+                    <span className={"ml-1.5 " + (isDark ? "text-zinc-500" : "text-gray-400")}>{f.valeur}</span>
+                  )}
                 </span>
                 <span className="text-[11px] font-medium flex items-center gap-1" style={{ color: couleur }}>
-                  {augmente ? "↑ augmente" : "↓ réduit"}
+                  {augmente ? "↑ augmente le risque" : "↓ réduit le risque"}
                 </span>
               </div>
               <div className="h-2 rounded-full overflow-hidden"

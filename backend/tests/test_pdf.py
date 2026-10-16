@@ -43,7 +43,7 @@ def test_la_fiche_est_un_pdf():
 def test_le_genre_n_est_jamais_un_facteur_affiche():
     libelles = [f["libelle"] for f in _facteurs_affiches(_analyse(), DOSSIER)]
     assert "Genre" not in libelles
-    assert libelles == ["Score externe 3", "Âge"]
+    assert libelles == ["Note de solvabilité externe 3", "Âge"]
 
 
 def test_code_authenticite_change_si_la_decision_change():
