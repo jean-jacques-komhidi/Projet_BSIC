@@ -5,14 +5,16 @@ import { useAuth } from "../context/AuthContext";
 import Header from "../components/ui/Header";
 import { getAnalyses, telechargerPdf, supprimerAnalyse } from "../services/analyseService";
 import ConfirmationSuppression from "../components/ui/ConfirmationSuppression";
-import { Loader2, Download, Search, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X } from "lucide-react";
+import { Loader2, Download, Search, Trash2, CheckCircle2, X } from "lucide-react";
+import PiedDeListe from "../components/ui/PiedDeListe";
+import useDefilementInfini from "../hooks/useDefilementInfini";
 
 // Couleurs de l'application : chaque couleur garde un seul sens
 const BLEU = "#2E86C1";
 const VERT = "#0F6E56";
 const ORANGE = "#d97706";
 const ROUGE = "#c0392b";
-const PAR_PAGE = 15;
+const PAS = 20;   // lignes ajoutées à chaque chargement
 const DELAI_SUIVI_JOURS = 30;
 
 const LIBELLE_RISQUE = { faible: "Faible", moyen: "Moyen", eleve: "Élevé" };
@@ -74,7 +76,6 @@ export default function HistoriquePage() {
   const [issue, setIssue] = useState("toutes");
   const [periode, setPeriode] = useState("tout");
   const [recherche, setRecherche] = useState("");
-  const [page, setPage] = useState(1);
   const [pdfEnCours, setPdfEnCours] = useState(null);
   const [maintenant] = useState(() => Date.now());
   const location = useLocation();
@@ -120,10 +121,9 @@ export default function HistoriquePage() {
     (decision === "toutes" || a.decision === decision) &&
     (issue === "toutes" || issueDe(a, maintenant) === issue));
 
-  const nbPages = Math.max(1, Math.ceil(filtrees.length / PAR_PAGE));
-  const pageCourante = Math.min(page, nbPages);
-  const visibles = filtrees.slice((pageCourante - 1) * PAR_PAGE, pageCourante * PAR_PAGE);
-  const changer = (setter) => (v) => { setter(v); setPage(1); };
+  const [nbAffiches, repere, chargementSuite, reinitialiser] = useDefilementInfini(filtrees.length, PAS);
+  const visibles = filtrees.slice(0, nbAffiches);
+  const changer = (setter) => (v) => { setter(v); reinitialiser(); };
 
   async function exporterPdf(e, id) {
     e.stopPropagation();
@@ -209,7 +209,7 @@ export default function HistoriquePage() {
                 Lancer une première analyse
               </button>
             ) : (
-              <button onClick={() => { setDecision("toutes"); setIssue("toutes"); setPeriode("tout"); setRecherche(""); setPage(1); }}
+              <button onClick={() => { setDecision("toutes"); setIssue("toutes"); setPeriode("tout"); setRecherche(""); reinitialiser(); }}
                 className="mt-3 text-sm font-medium" style={{ color: BLEU }}>
                 Effacer les filtres
               </button>
@@ -277,24 +277,8 @@ export default function HistoriquePage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            <div className={"flex items-center justify-between gap-3 px-4 lg:px-5 py-3 border-t text-xs " + bordure + " " +
-              (isDark ? "text-zinc-500" : "text-gray-500")}>
-              <span>
-                {(pageCourante - 1) * PAR_PAGE + 1} à {Math.min(pageCourante * PAR_PAGE, filtrees.length)} sur {filtrees.length} analyses
-              </span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage(pageCourante - 1)} disabled={pageCourante === 1} aria-label="Page précédente"
-                  className={"p-1.5 rounded-lg border disabled:opacity-40 " + (isDark ? "border-zinc-700 hover:bg-zinc-800" : "border-gray-200 hover:bg-gray-50")}>
-                  <ChevronLeft size={14} />
-                </button>
-                <span className="px-2">Page {pageCourante} sur {nbPages}</span>
-                <button onClick={() => setPage(pageCourante + 1)} disabled={pageCourante === nbPages} aria-label="Page suivante"
-                  className={"p-1.5 rounded-lg border disabled:opacity-40 " + (isDark ? "border-zinc-700 hover:bg-zinc-800" : "border-gray-200 hover:bg-gray-50")}>
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
+            <PiedDeListe affiches={nbAffiches} total={filtrees.length} nom="analyses" feminin
+              repere={repere} chargement={chargementSuite} isDark={isDark} />
           </>
         )}
       </div>

@@ -1,10 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import Header from "../components/ui/Header";
 import ScoreForm from "../components/ScoreForm";
 import ScoreResult from "../components/ScoreResult";
 import ShapChart from "../components/ShapChart";
-import { rechercherClients } from "../services/clientService";
+import { rechercherClients, getClient } from "../services/clientService";
 import { realiserAnalyse, telechargerPdf } from "../services/analyseService";
 import {
   Search, Loader2, ChevronRight, X, SearchX,
@@ -146,6 +147,13 @@ export default function AnalysePage() {
   const [error, setError] = useState(null);
   const [etape, setEtape] = useState("recherche");
   const resultRef = useRef(null);
+  // Client présélectionné depuis la liste des clients (/analyse?client=12)
+  const [params] = useSearchParams();
+  const clientDemande = params.get("client");
+  useEffect(() => {
+    if (!clientDemande) return;
+    getClient(clientDemande).then((c) => { setClientSelectionne(c); setEtape("analyse"); }).catch(() => {});
+  }, [clientDemande]);
 
   function selectionner(client) {
     setClientSelectionne(client);
