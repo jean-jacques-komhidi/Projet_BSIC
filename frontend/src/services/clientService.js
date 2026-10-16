@@ -34,3 +34,8 @@ export async function modifierClient(id, donnees) {
 export async function supprimerClient(id) {
   await api.delete(`/clients/${id}`);
 }
+// Clients avec le résumé de leurs analyses (liste enrichie)
+export async function getSyntheseClients() {
+  const reponse = await api.get("/clients/synthese");
+  return reponse.data;
+}
