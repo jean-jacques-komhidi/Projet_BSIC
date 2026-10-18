@@ -128,6 +128,7 @@ orjson==3.12.0
 ormsgpack==1.12.2
 overrides==7.7.0
 packaging==26.3
+openpyxl==3.1.5
 pandas==3.0.5
 pandocfilters==1.5.1
 parso==0.8.7

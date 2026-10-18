@@ -5,7 +5,7 @@ import { useNotifications } from "../../context/NotificationsContext";
 import { useAuth } from "../../context/AuthContext";
 import {
   LayoutDashboard, FileSearch, Users, Bell, History,
-  MessageSquare, UserCog, Activity, UserCircle,
+  MessageSquare, UserCog, Activity, UserCircle, Download,
   Moon, Sun, LogOut, Menu, X,
 } from "lucide-react";
 import logoBsic from "../../assets/logo_bsic.png";
@@ -84,6 +84,7 @@ export default function Sidebar() {
           <p className={sectionLabel}>Administration</p>
           <Lien to="/utilisateurs" icone={UserCog} onClose={onClose}>Utilisateurs</Lien>
           <Lien to="/monitoring" icone={Activity} onClose={onClose}>Monitoring</Lien>
+          <Lien to="/export" icone={Download} onClose={onClose}>Export des données</Lien>
         </>
       )}
 

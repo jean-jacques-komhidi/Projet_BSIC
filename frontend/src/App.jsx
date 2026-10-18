@@ -11,6 +11,7 @@ import NotificationsPage from "./pages/NotificationsPage";
 import UtilisateursPage from "./pages/UtilisateursPage";
 import UtilisateurFormPage from "./pages/UtilisateurFormPage";
 import MonitoringPage from "./pages/MonitoringPage";
+import ExportPage from "./pages/ExportPage";
 import ProfilPage from "./pages/ProfilPage";
 import Layout from "./components/layout/Layout";
 
@@ -82,6 +83,7 @@ function App() {
           <Route path="/utilisateurs/nouveau" element={<PageProtegee><UtilisateurFormPage /></PageProtegee>} />
           <Route path="/utilisateurs/:id/modifier" element={<PageProtegee><UtilisateurFormPage /></PageProtegee>} />
           <Route path="/monitoring" element={<PageProtegee><MonitoringPage /></PageProtegee>} />
+          <Route path="/export" element={<PageProtegee><ExportPage /></PageProtegee>} />
           <Route path="/profil" element={<PageProtegee><ProfilPage /></PageProtegee>} />
 
       {/* Redirection par défaut */}

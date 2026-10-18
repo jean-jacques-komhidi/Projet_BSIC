@@ -97,6 +97,24 @@ class Notification(Base):
     texte_lien = Column(String(60), nullable=True)  # ex. "Ouvrir le monitoring"
 
 
+class ExportDonnees(Base):
+    """Journal des exports : qui a exporte quoi, pour qui et pourquoi (trace d'audit)."""
+    __tablename__ = "exports_donnees"
+    id = Column(Integer, primary_key=True, index=True)
+    date_export = Column(DateTime, default=datetime.utcnow, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    auteur = Column(String(100))
+    jeu = Column(String(20))                 # analyses, clients, versions
+    groupes = Column(String(200))            # groupes de colonnes exportes
+    destinataire = Column(String(60))
+    motif = Column(String(300))
+    anonymise = Column(Boolean, default=True)
+    format = Column(String(10))              # csv, xlsx
+    periode_debut = Column(DateTime, nullable=True)
+    periode_fin = Column(DateTime, nullable=True)
+    nb_lignes = Column(Integer)
+
+
 class EtatSurveillance(Base):
     """Memoire de la surveillance automatique (dernier etat, derniers rappels)."""
     __tablename__ = "etat_surveillance"
