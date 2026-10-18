@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import Header from "../components/ui/Header";
 import { useNotifications } from "../context/NotificationsContext";
@@ -6,29 +7,29 @@ import {
   getNotifications, marquerLue, toutMarquerLu,
 } from "../services/notificationService";
 import {
-  Bell, CheckCircle2, AlertTriangle, Info, CheckCheck, Loader2,
+  Bell, CheckCircle2, AlertTriangle, AlertOctagon, Info, CheckCheck, Loader2,
 } from "lucide-react";
 
 export default function NotificationsPage() {
   const { isDark } = useTheme();
   const { rafraichirCompteur } = useNotifications();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  async function charger() {
-    setLoading(true);
-    try { setNotifications(await getNotifications()); }
-    catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { charger(); }, []);
+  useEffect(() => {
+    getNotifications()
+      .then(setNotifications)
+      .catch((e) => console.error(e))
+      .finally(() => setLoading(false));
+  }, []);
 
   async function marquer(id) {
     try {
       await marquerLue(id);
       setNotifications((n) => n.map((x) => x.id === id ? { ...x, lue: true } : x));
       rafraichirCompteur();
-    } catch {}
+    } catch { /* le compteur sera rafraîchi au prochain passage */ }
   }
 
   async function toutLire() {
@@ -36,21 +37,30 @@ export default function NotificationsPage() {
       await toutMarquerLu();
       setNotifications((n) => n.map((x) => ({ ...x, lue: true })));
       rafraichirCompteur();
-    } catch {}
+    } catch { /* le compteur sera rafraîchi au prochain passage */ }
   }
 
   // Icône et couleur selon le type
   function styleType(type) {
     switch (type) {
       case "succes": return { Icone: CheckCircle2, couleur: "#0F6E56" };
+      case "danger": return { Icone: AlertOctagon, couleur: "#c0392b" };
       case "alerte": return { Icone: AlertTriangle, couleur: "#d97706" };
       default: return { Icone: Info, couleur: "#2E86C1" };
     }
   }
 
+  // Dates en heure du Tchad (l'API renvoie de l'UTC sans fuseau)
   const formatDate = (d) => d
-    ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    ? new Date(String(d).endsWith("Z") ? d : d + "Z").toLocaleDateString("fr-FR", {
+      day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Ndjamena" })
     : "";
+
+  function ouvrir(e, n) {
+    e.stopPropagation();
+    if (!n.lue) marquer(n.id);
+    navigate(n.lien);
+  }
 
   const nbNonLues = notifications.filter((n) => !n.lue).length;
 
@@ -109,7 +119,14 @@ export default function NotificationsPage() {
                       {!n.lue && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: "#2E86C1" }} />}
                     </div>
                     <p className={"text-sm mt-0.5 " + (isDark ? "text-zinc-400" : "text-gray-600")}>{n.message}</p>
-                    <p className={"text-xs mt-1 " + (isDark ? "text-zinc-600" : "text-gray-400")}>{formatDate(n.date_creation)}</p>
+                    <p className={"text-xs mt-1 " + (isDark ? "text-zinc-600" : "text-gray-400")}>
+                      {formatDate(n.date_creation)}
+                      {n.lien && (
+                        <button onClick={(e) => ouvrir(e, n)} className="ml-3 font-medium hover:underline" style={{ color: isDark ? "#7cc0ea" : "#2E86C1" }}>
+                          {n.texte_lien || "Ouvrir"}
+                        </button>
+                      )}
+                    </p>
                   </div>
                 </div>
               );

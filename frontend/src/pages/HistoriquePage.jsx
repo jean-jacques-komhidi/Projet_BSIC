@@ -73,7 +73,8 @@ export default function HistoriquePage() {
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur] = useState("");
   const [decision, setDecision] = useState("toutes");
-  const [issue, setIssue] = useState("toutes");
+  // Filtre « Issue à renseigner » pré-sélectionné depuis une notification (?issue=a_renseigner)
+  const [issue, setIssue] = useState(() => new URLSearchParams(window.location.search).get("issue") || "toutes");
   const [periode, setPeriode] = useState("tout");
   const [recherche, setRecherche] = useState("");
   const [pdfEnCours, setPdfEnCours] = useState(null);

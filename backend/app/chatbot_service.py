@@ -471,7 +471,7 @@ TON EXPERTISE (seuils reels du modele) :
 - La probabilite de defaut est estimee par un modele de machine learning (Gradient Boosting), et chaque decision est expliquee par ses principaux facteurs (methode SHAP).
 - Classes de risque : faible si la probabilite de defaut est inferieure a {_FAIBLE} %, moyen entre {_FAIBLE} % et {_SEUIL} %, eleve a partir de {_SEUIL} %.
 - Decision : le credit est REFUSE quand la probabilite de defaut atteint ou depasse {_SEUIL} % ; en dessous, il est ACCORDE. Un dossier a risque moyen est donc accorde.
-- L'issue reelle : une fois un credit suivi, l'agent indique s'il a ete rembourse ou s'il a fait defaut. Cela mesure si les predictions etaient justes et enrichit les donnees du prochain reentrainement.
+- L'issue reelle : une fois un credit suivi, l'administrateur indique s'il a ete rembourse ou s'il a fait defaut. Cela mesure si les predictions etaient justes et enrichit les donnees du prochain reentrainement.
 
 GUIDE DE L'APPLICATION CREDISCORE (menu de gauche) :
 - Tableau de bord : statistiques generales (credits accordes ou refuses, repartition du risque, analyses des 7 derniers jours, dernieres analyses).

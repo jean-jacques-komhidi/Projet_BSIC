@@ -10,7 +10,7 @@ afficher la progression en temps reel.
 
 import threading
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Etat global du reentrainement (partage entre les requetes)
 etat_retrain = {
@@ -18,67 +18,62 @@ etat_retrain = {
     "progress": 0,
     "message": "",
     "last_result": None,
-    "current_version": "1.0",
 }
 
 _lock = threading.Lock()
 
 
-def _executer_reentrainement(db_factory):
+def _texte_resultat(resume) -> str:
+    def f(x):
+        return f"{x:.3f}".replace(".", ",") if x is not None else "inconnue"
+    return (f"Candidat {resume['meilleur_modele']} : AUC {f(resume['auc_candidat'])} contre {f(resume['auc_actuel'])} "
+            f"pour le modèle en service, sur le {resume['jeu_comparaison']}.")
+
+
+def _executer_reentrainement(db_factory, auteur=None):
     """Execute le reentrainement en tache de fond, en mettant a jour l'etat."""
     from .reentrainement import reentrainer
-    from . import models
+    from .notification_service import notifier_admins, notifier_agents
 
     db = db_factory()
     try:
         with _lock:
             etat_retrain["running"] = True
-            etat_retrain["progress"] = 10
-            etat_retrain["message"] = "Chargement des donnees..."
+            etat_retrain["progress"] = 20
+            etat_retrain["message"] = "Chargement des données et entraînement des modèles..."
 
-        # AUC de l'ancien modele en production (avant)
-        ancienne = db.query(models.ModelVersion).filter(
-            models.ModelVersion.en_production == True).first()
-        ancien_auc = ancienne.auc if ancienne else None
-
-        with _lock:
-            etat_retrain["progress"] = 40
-            etat_retrain["message"] = "Reentrainement des modeles..."
-
-        # Lancer le reentrainement (fonction existante)
-        resume = reentrainer(db, avec_mlflow=True)
+        resume = reentrainer(db, avec_mlflow=True, auteur=auteur)
 
         with _lock:
             etat_retrain["progress"] = 90
             etat_retrain["message"] = "Finalisation..."
 
-        nouveau_auc = resume["auc_test"]
-        ameliore = ancien_auc is None or nouveau_auc >= ancien_auc
-
-        # Notification
-        try:
-            from .notification_service import creer_notification
-            creer_notification(
-                db, titre="Reentrainement termine",
-                message=f"Meilleur modele : {resume['meilleur_modele']} (AUC {nouveau_auc}).",
-                type="succes")
-        except Exception:
-            pass
+        lien = {"categorie": "modele", "lien": "/monitoring", "texte_lien": "Ouvrir le monitoring"}
+        if resume["promu"]:
+            notifier_admins(db, "Nouveau modèle mis en service",
+                            _texte_resultat(resume) + " Il fait mieux et remplace le modèle précédent.",
+                            type="succes", **lien)
+            notifier_agents(db, "Le modèle de scoring a été mis à jour",
+                            "Une nouvelle version est en service. Un même profil peut obtenir un score "
+                            "légèrement différent de celui d'avant.", type="info", categorie="modele")
+        else:
+            notifier_admins(db, "Nouveau modèle non retenu",
+                            _texte_resultat(resume) + " Il ne fait pas mieux : le modèle en service est conservé.",
+                            type="info", **lien)
 
         with _lock:
             etat_retrain["progress"] = 100
             etat_retrain["running"] = False
-            etat_retrain["message"] = "Reentrainement termine."
-            etat_retrain["current_version"] = str(resume.get("total_donnees", "1.0"))
+            etat_retrain["message"] = "Réentraînement terminé."
             etat_retrain["last_result"] = {
-                "improved": ameliore,
+                "improved": resume["promu"],
                 "best_model": resume["meilleur_modele"],
-                "old_auc": round(ancien_auc, 4) if ancien_auc else None,
-                "new_auc": nouveau_auc,
-                "new_version": resume.get("total_donnees"),
+                "old_auc": resume["auc_actuel"],
+                "new_auc": resume["auc_candidat"],
+                "jeu_comparaison": resume["jeu_comparaison"],
                 "donnees_reelles": resume.get("donnees_reelles_integrees", 0),
                 "total_donnees": resume.get("total_donnees"),
-                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "timestamp": (datetime.utcnow() + timedelta(hours=1)).strftime("%d/%m/%Y %H:%M"),
             }
     except Exception as e:
         with _lock:
@@ -89,7 +84,7 @@ def _executer_reentrainement(db_factory):
         db.close()
 
 
-def lancer_reentrainement(db_factory):
+def lancer_reentrainement(db_factory, auteur=None):
     """Demarre le reentrainement en tache de fond (si pas deja en cours)."""
     with _lock:
         if etat_retrain["running"]:
@@ -99,7 +94,7 @@ def lancer_reentrainement(db_factory):
         etat_retrain["message"] = "Demarrage..."
         etat_retrain["last_result"] = None
 
-    thread = threading.Thread(target=_executer_reentrainement, args=(db_factory,), daemon=True)
+    thread = threading.Thread(target=_executer_reentrainement, args=(db_factory, auteur), daemon=True)
     thread.start()
     return True
 
