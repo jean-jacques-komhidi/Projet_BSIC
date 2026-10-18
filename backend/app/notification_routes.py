@@ -2,17 +2,20 @@
 """
 Routes des notifications.
 
-  - GET  /notifications              : lister les notifications
-  - GET  /notifications/non-lues     : compter les notifications non lues
-  - PUT  /notifications/{id}/lue     : marquer une notification comme lue
-  - PUT  /notifications/tout-lu      : marquer toutes comme lues
+  - GET  /notifications              : lister mes notifications
+  - GET  /notifications/non-lues     : compter mes notifications non lues
+  - PUT  /notifications/{id}/lue     : marquer une de mes notifications comme lue
+  - PUT  /notifications/tout-lu      : marquer toutes mes notifications comme lues
 
-Accessible a tout utilisateur connecte.
+Chaque personne ne voit que ses propres notifications. Les anciennes
+notifications sans destinataire sont reservees aux administrateurs.
 """
 
+from typing import Optional
 from pydantic import BaseModel
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .database import get_db
@@ -29,9 +32,19 @@ class NotificationReponse(BaseModel):
     type: str
     lue: bool
     date_creation: datetime
+    categorie: Optional[str] = None
+    lien: Optional[str] = None
+    texte_lien: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+def _mes_notifications(db: Session, utilisateur):
+    condition = models.Notification.destinataire_id == utilisateur.id
+    if utilisateur.role == "admin":
+        condition = or_(condition, models.Notification.destinataire_id.is_(None))
+    return db.query(models.Notification).filter(condition)
 
 
 @router.get("", response_model=list[NotificationReponse])
@@ -39,8 +52,8 @@ def lister_notifications(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Liste les notifications, les plus recentes d'abord."""
-    return db.query(models.Notification).order_by(
+    """Liste mes notifications, les plus recentes d'abord."""
+    return _mes_notifications(db, utilisateur).order_by(
         models.Notification.date_creation.desc()).limit(50).all()
 
 
@@ -49,9 +62,8 @@ def compter_non_lues(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Compte les notifications non lues (pour le badge de la cloche)."""
-    nombre = db.query(models.Notification).filter(
-        models.Notification.lue == False).count()
+    """Compte mes notifications non lues (pour le badge de la cloche)."""
+    nombre = _mes_notifications(db, utilisateur).filter(models.Notification.lue == False).count()  # noqa: E712
     return {"non_lues": nombre}
 
 
@@ -61,9 +73,8 @@ def marquer_lue(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Marque une notification comme lue."""
-    notif = db.query(models.Notification).filter(
-        models.Notification.id == notif_id).first()
+    """Marque une de mes notifications comme lue."""
+    notif = _mes_notifications(db, utilisateur).filter(models.Notification.id == notif_id).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification introuvable")
     notif.lue = True
@@ -76,8 +87,8 @@ def tout_marquer_lu(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Marque toutes les notifications comme lues."""
-    db.query(models.Notification).filter(
-        models.Notification.lue == False).update({models.Notification.lue: True})
+    """Marque toutes mes notifications comme lues (sans toucher a celles des autres)."""
+    for notif in _mes_notifications(db, utilisateur).filter(models.Notification.lue == False).all():  # noqa: E712
+        notif.lue = True
     db.commit()
     return {"message": "Toutes les notifications marquees comme lues"}

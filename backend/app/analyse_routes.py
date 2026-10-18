@@ -16,7 +16,7 @@ defaut) est renseigne a posteriori, une fois l'issue du credit connue.
 """
 
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,8 @@ from .schemas_analyse import AnalyseCreation, AnalyseReponse, SimulationDemande
 from .security import utilisateur_courant, administrateur_courant
 from .model_service import ServiceModele, SEUIL_DECISION
 from .logging_config import logger
-from .notification_service import creer_notification
+from .notification_service import creer_notification, notifier_admins
+from .alertes_service import verifier_en_tache_de_fond, alerter_client_en_hausse
 from .pdf_service import (
     _facteurs_affiches, _ratios, _conditions_ou_recommandations, _motivation,
     _traduire, _fcfa, NORME_ENDETTEMENT,
@@ -79,6 +80,7 @@ def _analyse_avec_facteurs(analyse):
 @router.post("", response_model=AnalyseReponse, status_code=201)
 def realiser_analyse(
     donnees: AnalyseCreation,
+    taches: BackgroundTasks,
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
@@ -106,6 +108,13 @@ def realiser_analyse(
     db.add(analyse)
     db.commit()
     db.refresh(analyse)
+    # Alerte a l'agent si le risque du client monte, et verification du modele
+    # (au plus une fois par jour) apres la reponse, sans ralentir l'analyse.
+    try:
+        alerter_client_en_hausse(db, analyse)
+    except Exception as e:
+        logger.error(f"Alerte client impossible : {e}")
+    taches.add_task(verifier_en_tache_de_fond)
     return _analyse_avec_facteurs(analyse)
 
 
@@ -403,6 +412,15 @@ def renseigner_resultat(
     analyse.resultat_reel = resultat
     db.commit()
     db.refresh(analyse)
+    # Prevenir l'agent qui a traite le dossier
+    if analyse.user_id and analyse.user_id != admin.id:
+        client = db.get(models.Client, analyse.client_id) if analyse.client_id else None
+        creer_notification(
+            db, "Issue renseignée pour l'un de vos crédits",
+            f"Le crédit de {client.nom if client else 'votre client'} (analyse n° {analyse.id}) a été marqué "
+            f"{'remboursé' if resultat == 'rembourse' else 'en défaut'} par l'administrateur.",
+            type="succes" if resultat == "rembourse" else "alerte", destinataire_id=analyse.user_id,
+            categorie="dossiers", lien=f"/analyse/{analyse.id}", texte_lien="Voir le dossier")
     return analyse
 
 
@@ -425,9 +443,9 @@ def supprimer_analyse(
     db.delete(analyse)
     db.commit()
     logger.warning(f"Analyse {analyse_id} ({nom}, {date}) supprimee par {admin.email}")
-    creer_notification(db, "Analyse supprimée",
-                       f"L'analyse n° {analyse_id} de {nom} du {date} a été supprimée par {admin.nom}.",
-                       "alerte")
+    notifier_admins(db, "Analyse supprimée",
+                    f"L'analyse n° {analyse_id} de {nom} du {date} a été supprimée par {admin.nom}.",
+                    type="info", categorie="dossiers")
     return Response(status_code=204)
 
 

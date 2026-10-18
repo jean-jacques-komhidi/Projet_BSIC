@@ -10,7 +10,6 @@ import AssistantPage from "./pages/AssistantPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import UtilisateursPage from "./pages/UtilisateursPage";
 import UtilisateurFormPage from "./pages/UtilisateurFormPage";
-import SurveillancePage from "./pages/SurveillancePage";
 import MonitoringPage from "./pages/MonitoringPage";
 import ProfilPage from "./pages/ProfilPage";
 import Layout from "./components/layout/Layout";
@@ -82,7 +81,6 @@ function App() {
           <Route path="/utilisateurs" element={<PageProtegee><UtilisateursPage /></PageProtegee>} />
           <Route path="/utilisateurs/nouveau" element={<PageProtegee><UtilisateurFormPage /></PageProtegee>} />
           <Route path="/utilisateurs/:id/modifier" element={<PageProtegee><UtilisateurFormPage /></PageProtegee>} />
-          <Route path="/surveillance" element={<PageProtegee><SurveillancePage /></PageProtegee>} />
           <Route path="/monitoring" element={<PageProtegee><MonitoringPage /></PageProtegee>} />
           <Route path="/profil" element={<PageProtegee><ProfilPage /></PageProtegee>} />
 

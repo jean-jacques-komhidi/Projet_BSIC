@@ -11,7 +11,7 @@ Routes principales :
 - /reentrainer      : reentrainement du modele (admin)
 - /chatbot          : assistant conversationnel
 - /dashboard        : tableau de bord
-- /drift            : surveillance de la derive (admin)
+- /monitoring       : surveillance du modele et reentrainement (admin)
 
 Pour la lancer : uvicorn app.main:app --reload
 """
@@ -24,7 +24,7 @@ from .model_service import ServiceModele
 from .logging_config import logger
 from .erreurs import enregistrer_gestionnaires
 from . import auth_routes, client_routes, analyse_routes, notification_routes
-from . import reentrainement_routes, chatbot_routes, dashboard_routes, drift_routes, monitoring_routes, conversation_routes
+from . import reentrainement_routes, chatbot_routes, dashboard_routes, monitoring_routes, conversation_routes
 
 app = FastAPI(
     title="API CREDISCORE - BSIC Tchad",
@@ -63,7 +63,6 @@ app.include_router(reentrainement_routes.router)
 app.include_router(chatbot_routes.router)
 app.include_router(conversation_routes.router)
 app.include_router(dashboard_routes.router)
-app.include_router(drift_routes.router)
 app.include_router(monitoring_routes.router)
 app.include_router(notification_routes.router)
 
@@ -80,6 +79,18 @@ except Exception as e:
 @app.on_event("startup")
 def au_demarrage():
     logger.info("API CREDISCORE demarree (version 1.7.0).")
+    # Tables et colonnes a jour, meme si init_db n'a pas ete relance
+    try:
+        from .init_db import mettre_a_jour_colonnes
+        from .database import Base, engine
+        Base.metadata.create_all(bind=engine)
+        mettre_a_jour_colonnes()
+    except Exception as e:
+        logger.error(f"Mise a jour des tables impossible : {e}")
+    # Premiere verification du modele, en arriere-plan
+    import threading
+    from .alertes_service import verifier_en_tache_de_fond
+    threading.Thread(target=verifier_en_tache_de_fond, daemon=True).start()
 
 
 @app.get("/")

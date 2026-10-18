@@ -41,6 +41,11 @@ class ModelVersion(Base):
     auc = Column(Float)
     en_production = Column(Boolean, default=False)
     date_creation = Column(DateTime, default=datetime.utcnow)
+    # 'production', 'retire' ou 'rejete' (candidat moins bon que le modele en service)
+    statut = Column(String(20), nullable=True)
+    # AUC mesuree sur les issues reelles recentes lors du dernier reentrainement
+    auc_reelle = Column(Float, nullable=True)
+    date_retrait = Column(DateTime, nullable=True)
     analyses = relationship("Analyse", back_populates="version_modele")
 
 
@@ -73,9 +78,24 @@ class Notification(Base):
     id = Column(Integer, primary_key=True, index=True)
     titre = Column(String(150), nullable=False)
     message = Column(Text, nullable=False)
-    type = Column(String(30), default="info")   # info, succes, alerte
+    type = Column(String(30), default="info")   # info, succes, alerte, danger
     lue = Column(Boolean, default=False)
     date_creation = Column(DateTime, default=datetime.utcnow)
+    # Destinataire : chaque personne a ses propres notifications (et son statut lu).
+    # Les anciennes notifications sans destinataire sont reservees aux administrateurs.
+    destinataire_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    categorie = Column(String(20), nullable=True)   # modele, dossiers
+    lien = Column(String(200), nullable=True)       # page a ouvrir, ex. /monitoring
+    texte_lien = Column(String(60), nullable=True)  # ex. "Ouvrir le monitoring"
+
+
+class EtatSurveillance(Base):
+    """Memoire de la surveillance automatique (dernier etat, derniers rappels)."""
+    __tablename__ = "etat_surveillance"
+
+    cle = Column(String(50), primary_key=True)
+    valeur = Column(String(200), nullable=True)
+    date_maj = Column(DateTime, default=datetime.utcnow)
 
 
 class Conversation(Base):

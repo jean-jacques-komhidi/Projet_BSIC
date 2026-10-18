@@ -12,12 +12,17 @@ presenter toute l'application :
 - l'issue reelle (rembourse / defaut) d'une partie des credits anciens, le
   reste apparaissant dans "Dossiers a suivre" ;
 - deux clients "vitrines" pour CrediBot : un client tres stable et un client
-  dont le risque augmente.
+  dont le risque augmente ;
+- une derive volontaire, pour montrer le monitoring : sur les 30 derniers jours,
+  les demandeurs gagnent moins et empruntent plus (derive des donnees), et les
+  credits accordes il y a 1 a 4 mois font plus souvent defaut que prevu
+  (derive de concept). Option --sans-derive pour des donnees stables.
 
 Utilisation, depuis le dossier backend (une base deja initialisee, avec un
 administrateur cree par app.creer_admin) :
     python -m app.generer_donnees_test            # refuse si la base contient deja des analyses
     python -m app.generer_donnees_test --ajouter  # ajoute quand meme
+    python -m app.generer_donnees_test --sans-derive   # donnees stables, sans alerte
 
 Attention : donnees fictives. A ne jamais lancer sur une base de production reelle.
 """
@@ -31,10 +36,12 @@ from .database import SessionLocal
 from . import models
 from .model_service import ServiceModele
 from .security import hacher_mot_de_passe
+from .alertes_service import alerter_client_en_hausse
 
 random.seed(2026)
 
-NB_ANALYSES = 150
+NB_ANALYSES = 240
+PART_RECENTE = 0.45      # part des analyses sur les 30 derniers jours
 JOURS_HISTORIQUE = 180
 MOT_DE_PASSE_AGENTS = "Agent@2026"
 AGENTS = [("Fatimé Abakar", "fatime.abakar@bsic.td"), ("Moussa Ngarlem", "moussa.ngarlem@bsic.td")]
@@ -62,11 +69,14 @@ EMPLOYEURS = ["School", "Government", "Business Entity Type 3", "Self-employed",
 # Tranches de montant (FCFA) et leur poids : beaucoup de petits credits, peu de gros
 TRANCHES = [((300_000, 990_000), 0.30), ((1_000_000, 2_990_000), 0.35),
             ((3_000_000, 4_990_000), 0.20), ((5_000_000, 12_000_000), 0.15)]
+# Derive : les demandes recentes portent sur des montants plus eleves
+TRANCHES_DERIVE = [((300_000, 990_000), 0.12), ((1_000_000, 2_990_000), 0.28),
+                   ((3_000_000, 4_990_000), 0.28), ((5_000_000, 12_000_000), 0.32)]
 
 
-def _montant():
+def _montant(tranches=TRANCHES):
     r, cumul = random.random(), 0
-    for (bas, haut), poids in TRANCHES:
+    for (bas, haut), poids in tranches:
         cumul += poids
         if r <= cumul:
             return round(random.randint(bas, haut), -4)
@@ -78,14 +88,15 @@ def genre_de(nom: str) -> str:
 
 
 def dossier(qualite: float, montant: int = None, age: int = None, genre: str = None,
-            situation: str = None) -> dict:
+            situation: str = None, tension: float = 0.0) -> dict:
     """Dossier de credit. qualite : 0 (tres risque) a 1 (tres solide)."""
     montant = montant or _montant()
     duree = random.choice([12, 18, 24, 36, 48, 60])
     ext = lambda: round(min(max(random.gauss(0.15 + 0.6 * qualite, 0.1), 0.02), 0.95), 2)
     echeance = round(montant / duree * random.uniform(1.05, 1.2), -3)
     # Revenu deduit d'un taux d'endettement realiste (environ 20 % a 70 %)
-    endettement = min(max(random.gauss(0.45 - 0.25 * qualite, 0.08), 0.15), 0.75)
+    # tension > 0 : demandeurs plus endettes, donc revenus plus faibles (derive)
+    endettement = min(max(random.gauss(0.45 - 0.25 * qualite + tension, 0.08), 0.15), 0.85)
     revenu = max(round(echeance / endettement, -3), 60_000)
     return {
         "AGE_ANNEES": age or random.randint(23, 60),
@@ -125,14 +136,19 @@ def _date(jours_min, jours_max):
     return datetime.utcnow() - timedelta(days=jours, hours=random.randint(0, 9), minutes=random.randint(0, 59))
 
 
-def _issue(analyse, rembourse_force=None):
-    """Issue reelle d'un credit accorde, correlee a la probabilite de defaut."""
+def _issue(analyse, rembourse_force=None, concept=False):
+    """Issue reelle d'un credit accorde, correlee a la probabilite de defaut.
+
+    concept=True : derive de concept, le lien entre le score et le defaut
+    s'affaiblit et le defaut augmente (le modele sous-estime le risque)."""
     if rembourse_force is not None:
         return "rembourse" if rembourse_force else "defaut"
-    return "defaut" if random.random() < analyse.probabilite_defaut * 0.8 else "rembourse"
+    p = analyse.probabilite_defaut
+    risque = 0.30 + 0.25 * p if concept else p * 0.8
+    return "defaut" if random.random() < risque else "rembourse"
 
 
-def generer(ajouter=False):
+def generer(ajouter=False, derive=True):
     db = SessionLocal()
     try:
         admin = db.query(models.User).filter(models.User.role == "admin").first()
@@ -205,22 +221,33 @@ def generer(ajouter=False):
         risque = [(120, 800_000, .15, .25), (60, 2_000_000, .35, .45), (20, 4_000_000, .55, .65), (2, 9_000_000, .80, .90)]
         for i, (jours, montant, pmin, pmax) in enumerate(risque):
             issue = (lambda a: _issue(a, rembourse_force=True)) if i == 0 else None
-            enregistrer(clients[CLIENT_RISQUE], dossier_cible(service, pmin, pmax, montant=montant, **profil(clients[CLIENT_RISQUE])),
+            derniere = enregistrer(clients[CLIENT_RISQUE], dossier_cible(service, pmin, pmax, montant=montant, **profil(clients[CLIENT_RISQUE])),
                         _date(jours, jours), utilisateurs[2], issue=issue)
+
+        # L'agent du client en hausse recoit l'alerte, comme lors d'une vraie analyse
+        db.flush()
+        alerter_client_en_hausse(db, derniere)
 
         # Analyses courantes : 60 % sur le dernier mois, le reste sur 6 mois
         autres = [clients[n] for n in NOMS]
         for _ in range(NB_ANALYSES - 7):
-            date = _date(0, 29) if random.random() < 0.6 else _date(30, JOURS_HISTORIQUE)
+            date = _date(0, 29) if random.random() < PART_RECENTE else _date(30, JOURS_HISTORIQUE)
             anciennete = (datetime.utcnow() - date).days
-            # Issue connue pour environ 60 % des credits accordes depuis plus de 30 jours
-            issue = _issue if anciennete > 30 and random.random() < 0.6 else None
-            montant = _montant()
+            recent = anciennete < 30 and derive
+            # Issue connue pour environ 85 % des credits accordes depuis plus de 30 jours ;
+            # derive de concept sur les credits accordes il y a 1 a 4 mois
+            issue = None
+            if anciennete > 30 and random.random() < 0.85:
+                concept = derive and anciennete <= 120
+                issue = (lambda a, c=concept: _issue(a, concept=c))
+            montant = _montant(TRANCHES_DERIVE if recent else TRANCHES)
             # Les gros montants sont un peu plus risques, comme en pratique
             qualite = random.betavariate(1.15, 1.6) - (0.12 if montant >= 5_000_000 else 0.05 if montant >= 3_000_000 else 0)
+            if recent:
+                qualite -= 0.08
             client = random.choice(autres)
-            enregistrer(client, dossier(max(qualite, 0), montant=montant, **profil(client)), date,
-                        random.choice(utilisateurs), issue=issue)
+            enregistrer(client, dossier(max(qualite, 0), montant=montant, tension=0.12 if recent else 0.0,
+                                        **profil(client)), date, random.choice(utilisateurs), issue=issue)
         db.commit()
 
         total = db.query(models.Analyse).count()
@@ -236,4 +263,4 @@ def generer(ajouter=False):
 
 
 if __name__ == "__main__":
-    generer(ajouter="--ajouter" in sys.argv)
+    generer(ajouter="--ajouter" in sys.argv, derive="--sans-derive" not in sys.argv)
