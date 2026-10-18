@@ -238,9 +238,14 @@ export default function MonitoringPage() {
               : `${dernier.best_model} non retenu : il ne fait pas mieux, le modèle en service est conservé`}
           </p>
           <div className="grid grid-cols-3 gap-3">
-            {[["AUC du modèle en service", virgule(dernier.old_auc, 3)], ["AUC du candidat", virgule(dernier.new_auc, 3)], ["Comparés sur", dernier.jeu_comparaison]].map(([t, v]) => (
+            {[[dernier.improved ? "AUC de l'ancien modèle" : "AUC du modèle en service", virgule(dernier.old_auc, 3)],
+              [dernier.improved ? "AUC du nouveau modèle" : "AUC du candidat", virgule(dernier.new_auc, 3),
+                dernier.old_auc != null && dernier.new_auc != null
+                  ? `${dernier.new_auc >= dernier.old_auc ? "+" : "−"}${virgule(Math.abs(dernier.new_auc - dernier.old_auc), 3)} sur les mêmes issues` : null],
+              ["Comparés sur", dernier.jeu_comparaison]].map(([t, v, sous]) => (
               <div key={t} className={"rounded-lg p-2.5 " + (isDark ? "bg-zinc-800/50" : "bg-white/70")}>
                 <p className={"text-xs mb-0.5 " + s.gris}>{t}</p><p className={"text-sm font-semibold " + s.fort}>{v}</p>
+                {sous && <p className="text-xs mt-0.5 font-medium" style={{ color: s.c(dernier.new_auc >= dernier.old_auc ? VERT : ROUGE) }}>{sous}</p>}
               </div>
             ))}
           </div>
@@ -264,7 +269,10 @@ export default function MonitoringPage() {
         {[
           ["AUC à l'entraînement", virgule(modele.auc, 3), null, modele.algorithme ? `${modele.algorithme}, v${modele.version}` : "Aucun modèle enregistré"],
           nouveauModele
-            ? ["AUC réelle", virgule(modele.auc_validation, 3), modele.auc_validation ? VERT : null, "À la validation, sur des issues non vues"]
+            ? ["AUC réelle", virgule(modele.auc_validation, 3), modele.auc_validation ? VERT : null,
+              modele.auc_precedent != null
+                ? `Contre ${virgule(modele.auc_precedent, 3)} pour l'ancien modèle, sur les mêmes ${modele.issues_validation || ""} issues`.replace("  ", " ")
+                : "À la validation, sur des issues non vues"]
             : ["AUC réelle", virgule(perf.auc), perf.auc === null ? null : aucBasse ? ROUGE : VERT,
               perf.issues >= perf.issues_minimum ? `Sur ${perf.issues} crédits à l'issue connue` : `${perf.issues} issues sur ${perf.issues_minimum} nécessaires`],
           ["Dérive des prédictions", predictions ? `PSI ${virgule(predictions.psi)}` : "—", predictions ? nivPred.couleur : null,
@@ -306,7 +314,7 @@ export default function MonitoringPage() {
       <div className="mb-6">
         <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
           <p className={s.tete}>Détail des versions du modèle</p>
-          <p className={"text-xs " + s.gris}>Un nouveau modèle ne remplace l'actuel que s'il fait mieux sur les mêmes données</p>
+          <p className={"text-xs " + s.gris}>Un nouveau modèle ne remplace l'actuel que s'il fait mieux sur les mêmes issues ; seules des AUC réelles mesurées ensemble se comparent</p>
         </div>
         <div className={s.carte + " overflow-x-auto"}>
           <table className="w-full min-w-[560px]">
@@ -324,7 +332,10 @@ export default function MonitoringPage() {
                       {v.statut === "production" && <span className={"ml-2 text-xs px-1.5 py-0.5 rounded border font-medium " + (isDark ? "border-amber-900 text-amber-400" : "border-amber-200 text-amber-600")}>En production</span>}</td>
                     <td className={"py-3 text-xs " + s.texte}>v{v.version}{v.date ? `, ${v.date}` : ""}</td>
                     <td className={"py-3 text-center text-xs " + s.texte}>{virgule(v.auc, 3)}</td>
-                    <td className="py-3 text-center text-xs font-semibold" style={{ color: v.auc_reelle === null ? undefined : s.c(v.auc_reelle < 0.7 ? ROUGE : VERT) }}>{virgule(v.auc_reelle)}</td>
+                    <td className="py-3 text-center text-xs">
+                      <span className={"font-semibold " + s.fort}>{virgule(v.auc_reelle)}</span>
+                      {v.mesure && <span className={"block text-[11px] mt-0.5 " + s.gris}>{v.mesure}</span>}
+                    </td>
                     <td className="py-3 text-center"><span className="text-xs px-1.5 py-0.5 rounded border" style={{ color: s.c(st[1]), borderColor: st[1] + "55" }}>{st[0]}</span></td>
                   </tr>
                 );

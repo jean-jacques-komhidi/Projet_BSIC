@@ -31,7 +31,7 @@ def etat(
     """Etat du modele. Profite de la visite pour lancer la verification du jour."""
     calcule = verifier_et_notifier(db)
     resultat = calcule or etat_du_modele(db)
-    resultat["versions"] = liste_versions(db, resultat["performance"]["auc"])
+    resultat["versions"] = liste_versions(db, resultat["performance"]["auc"], resultat["performance"]["issues"])
     resultat["reentrainement"] = get_etat()
     return resultat
 

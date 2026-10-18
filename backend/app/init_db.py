@@ -29,6 +29,9 @@ COLONNES_AJOUTEES = {
         "auc_reelle": "FLOAT",
         "date_retrait": "TIMESTAMP",
         "debut_reference": "TIMESTAMP",
+        "nb_issues_validation": "INTEGER",
+        "date_mesure": "TIMESTAMP",
+        "auc_precedent": "FLOAT",
     },
 }
 

@@ -241,6 +241,13 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
     maintenant = datetime.utcnow()
     en_service = db.query(models.ModelVersion).filter(models.ModelVersion.en_production == True).first()  # noqa: E712
     reelle = X_eval is not None
+    mesure = {"nb_issues_validation": len(X_eval), "date_mesure": maintenant} if reelle else {}
+
+    def _mesurer(version, auc):
+        version.auc_reelle = round(auc, 4)
+        version.nb_issues_validation = mesure["nb_issues_validation"]
+        version.date_mesure = maintenant
+
     if promu:
         joblib.dump(candidat, CHEMIN_MODELE)
         if en_service:
@@ -248,17 +255,20 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
             en_service.statut = "retire"
             en_service.date_retrait = maintenant
             if reelle and auc_actuel is not None:
-                en_service.auc_reelle = round(auc_actuel, 4)
+                _mesurer(en_service, auc_actuel)
         # Nouvelle reference de surveillance : les mois recents que le nouveau modele a appris
         from .surveillance_service import JOURS_REFERENCE_NOUVEAU_MODELE
         db.add(models.ModelVersion(algorithme=nom_candidat, auc=round(auc_socle, 4), en_production=True,
                                    statut="production", auc_reelle=round(auc_candidat, 4) if reelle else None,
-                                   debut_reference=maintenant - timedelta(days=JOURS_REFERENCE_NOUVEAU_MODELE)))
+                                   auc_precedent=round(auc_actuel, 4) if reelle and auc_actuel is not None else None,
+                                   debut_reference=maintenant - timedelta(days=JOURS_REFERENCE_NOUVEAU_MODELE), **mesure))
     else:
         db.add(models.ModelVersion(algorithme=nom_candidat, auc=round(auc_socle, 4), en_production=False,
-                                   statut="rejete", auc_reelle=round(auc_candidat, 4) if reelle else None))
+                                   statut="rejete", auc_reelle=round(auc_candidat, 4) if reelle else None,
+                                   auc_precedent=round(auc_actuel, 4) if reelle and auc_actuel is not None else None,
+                                   **mesure))
         if en_service and reelle and auc_actuel is not None:
-            en_service.auc_reelle = round(auc_actuel, 4)
+            _mesurer(en_service, auc_actuel)
     db.commit()
     if promu:
         _recharger_modele()

@@ -367,10 +367,14 @@ def test_reentrainement_complet_sur_un_socle_synthetique(base, tmp_path, monkeyp
     r = reentrainement.reentrainer(db, avec_mlflow=False, auteur="Test")
     assert r["part_donnees_locales"] == 0.3
     assert r["jeu_comparaison"].startswith("150 issues")
+    # Les deux modeles sont mesures ensemble, sur les memes issues
+    versions_mesurees = db.query(models.ModelVersion).filter(models.ModelVersion.nb_issues_validation == 150).count()
+    assert versions_mesurees == 2
     versions = db.query(models.ModelVersion).order_by(models.ModelVersion.id).all()
     if r["promu"]:
         assert versions[0].statut == "retire" and not versions[0].en_production
         assert versions[-1].en_production and versions[-1].debut_reference is not None
+        assert versions[-1].auc_precedent == round(r["auc_actuel"], 4)
     else:
         assert versions[-1].statut == "rejete" and versions[0].en_production
     db.close()

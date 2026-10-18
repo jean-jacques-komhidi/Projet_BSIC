@@ -387,7 +387,9 @@ def etat_du_modele(db: Session) -> dict:
                    "version": _numero_version(db, version) if version else None,
                    "issu_reentrainement": bool(debut_ref),
                    "mise_en_service": _locale(version.date_creation).strftime("%d/%m/%Y") if version and version.date_creation else None,
-                   "auc_validation": version.auc_reelle if version else None},
+                   "auc_validation": version.auc_reelle if version else None,
+                   "auc_precedent": version.auc_precedent if version else None,
+                   "issues_validation": version.nb_issues_validation if version else None},
         "donnees": {"variables": variables, "psi_max": psi_max,
                     "niveau": niveau_donnees, "detail": variables[0] if variables else None,
                     "phrase": _phrase_detail(variables[0]) if variables else ""},
@@ -402,15 +404,26 @@ def _numero_version(db: Session, version) -> int:
     return db.query(models.ModelVersion).filter(models.ModelVersion.id <= version.id).count()
 
 
-def liste_versions(db: Session, auc_reelle_production=None) -> list:
-    """Versions du modele, de la plus recente a la plus ancienne."""
+def liste_versions(db: Session, auc_reelle_production=None, issues_production=0) -> list:
+    """Versions du modele, de la plus recente a la plus ancienne.
+
+    Chaque AUC reelle est accompagnee de sa mesure (nombre d'issues, date) : deux
+    versions ne se comparent que si elles ont ete mesurees sur les memes issues."""
     versions = db.query(models.ModelVersion).order_by(models.ModelVersion.id.asc()).all()
     resultat = []
     for i, v in enumerate(versions, start=1):
         statut = "production" if v.en_production else (v.statut or "retire")
+        en_continu = v.en_production and auc_reelle_production is not None and issues_production >= MIN_ISSUES
+        if en_continu:
+            mesure = f"{issues_production} issues, suivi en continu"
+        elif v.nb_issues_validation and v.auc_reelle is not None:
+            mesure = f"{v.nb_issues_validation} issues, {_locale(v.date_mesure).strftime('%d/%m') if v.date_mesure else ''}".rstrip(", ")
+        else:
+            mesure = None
         resultat.append({
             "version": i, "algorithme": v.algorithme, "auc": v.auc,
-            "auc_reelle": auc_reelle_production if v.en_production and auc_reelle_production is not None else v.auc_reelle,
+            "auc_reelle": auc_reelle_production if en_continu else v.auc_reelle,
+            "mesure": mesure,
             "statut": statut,
             "date": _locale(v.date_creation).strftime("%d/%m/%Y") if v.date_creation else None,
         })

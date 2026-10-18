@@ -49,6 +49,11 @@ class ModelVersion(Base):
     # Debut de la periode de reference de la surveillance pour ce modele : apres une
     # mise en service, la derive est mesuree par rapport aux donnees recentes qu'il a apprises
     debut_reference = Column(DateTime, nullable=True)
+    # Mesure de l'AUC reelle : nombre d'issues mises de cote, date, et AUC du modele
+    # precedent sur ces memes issues (seules des mesures faites ensemble se comparent)
+    nb_issues_validation = Column(Integer, nullable=True)
+    date_mesure = Column(DateTime, nullable=True)
+    auc_precedent = Column(Float, nullable=True)
     analyses = relationship("Analyse", back_populates="version_modele")
 
 
