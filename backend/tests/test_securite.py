@@ -12,7 +12,7 @@ from app.security import hacher_mot_de_passe, verifier_mot_de_passe
 
 def test_hachage_different_du_clair():
     """Le mot de passe hache ne doit pas etre en clair."""
-    mdp = "motdepasse123"
+    mdp = "MotDeTest#2026"
     empreinte = hacher_mot_de_passe(mdp)
     assert empreinte != mdp
     assert len(empreinte) > 20
@@ -20,7 +20,7 @@ def test_hachage_different_du_clair():
 
 def test_verification_correcte():
     """Un mot de passe correct doit etre reconnu."""
-    mdp = "motdepasse123"
+    mdp = "MotDeTest#2026"
     empreinte = hacher_mot_de_passe(mdp)
     assert verifier_mot_de_passe(mdp, empreinte) is True
 

@@ -27,6 +27,7 @@ administrateur cree par app.creer_admin) :
 Attention : donnees fictives. A ne jamais lancer sur une base de production reelle.
 """
 
+import os
 import sys
 import json
 import random
@@ -43,7 +44,8 @@ random.seed(2026)
 NB_ANALYSES = 240
 PART_RECENTE = 0.45      # part des analyses sur les 30 derniers jours
 JOURS_HISTORIQUE = 180
-MOT_DE_PASSE_AGENTS = "Agent@2026"
+# Comptes de demonstration uniquement (base locale) ; modifiable par variable d'environnement
+MOT_DE_PASSE_AGENTS = os.getenv("MOT_DE_PASSE_AGENTS", "Agent@2026")
 AGENTS = [("Fatimé Abakar", "fatime.abakar@bsic.td"), ("Moussa Ngarlem", "moussa.ngarlem@bsic.td")]
 
 NOMS = [

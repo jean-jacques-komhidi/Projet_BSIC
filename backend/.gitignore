@@ -39,3 +39,28 @@ test_connexion.py
 # --- Editeurs ---
 .vscode/
 .idea/
+
+# --- Bases de donnees locales et sauvegardes ---
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+*.bak
+*_sauvegarde.pkl
+
+# --- Cles, certificats et identifiants ---
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+credentials*.json
+secrets/
+
+# --- Journaux et rapports de tests ---
+*.log
+logs/
+.coverage
+htmlcov/
+mlflow.db
