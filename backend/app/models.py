@@ -46,6 +46,9 @@ class ModelVersion(Base):
     # AUC mesuree sur les issues reelles recentes lors du dernier reentrainement
     auc_reelle = Column(Float, nullable=True)
     date_retrait = Column(DateTime, nullable=True)
+    # Debut de la periode de reference de la surveillance pour ce modele : apres une
+    # mise en service, la derive est mesuree par rapport aux donnees recentes qu'il a apprises
+    debut_reference = Column(DateTime, nullable=True)
     analyses = relationship("Analyse", back_populates="version_modele")
 
 

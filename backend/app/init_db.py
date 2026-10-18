@@ -28,6 +28,7 @@ COLONNES_AJOUTEES = {
         "statut": "VARCHAR(20)",
         "auc_reelle": "FLOAT",
         "date_retrait": "TIMESTAMP",
+        "debut_reference": "TIMESTAMP",
     },
 }
 

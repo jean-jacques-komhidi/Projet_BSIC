@@ -63,6 +63,8 @@ SEUIL_AUC = 0.70           # AUC reelle sous laquelle on alerte
 BAISSE_AUC_MAX = 0.05      # baisse toleree par rapport a l'AUC d'entrainement
 ECART_DEFAUT_MAX = 0.08    # ecart tolere entre defaut predit et constate
 MOIS_PERFORMANCE = 6
+# Apres une mise en service, la reference devient les mois recents appris par le nouveau modele
+JOURS_REFERENCE_NOUVEAU_MODELE = 120
 DECALAGE_TCHAD = timedelta(hours=1)
 EPS = 1e-4
 
@@ -254,7 +256,7 @@ def _derive_predictions(ref_analyses, rec_analyses, toutes, maintenant):
 # ---------------------------------------------------------------------------
 # 3. Performance reelle
 # ---------------------------------------------------------------------------
-def _performance(toutes, maintenant, version):
+def _performance(toutes, maintenant, version, toutes_analyses=None):
     debut = maintenant - timedelta(days=31 * MOIS_PERFORMANCE)
     connues = [a for a in toutes if a.decision == "ACCORDE" and a.resultat_reel in ("rembourse", "defaut")
                and a.date_analyse >= debut]
@@ -280,7 +282,8 @@ def _performance(toutes, maintenant, version):
             "defaut_constate": round(100 * float(np.mean(yy)), 1) if lot else None,
         })
 
-    en_attente = sum(1 for a in toutes if a.decision == "ACCORDE" and not a.resultat_reel
+    # Les issues a renseigner concernent tous les credits, quel que soit le modele qui les a notes
+    en_attente = sum(1 for a in (toutes_analyses or toutes) if a.decision == "ACCORDE" and not a.resultat_reel
                      and a.date_analyse < maintenant - timedelta(days=JOURS_RECENT))
     return {
         "issues": len(connues), "issues_minimum": MIN_ISSUES, "issues_en_attente": en_attente,
@@ -336,9 +339,13 @@ def etat_du_modele(db: Session) -> dict:
     limite = maintenant - timedelta(days=JOURS_RECENT)
     toutes = db.query(models.Analyse).filter(models.Analyse.date_analyse.isnot(None)) \
         .order_by(models.Analyse.date_analyse.asc()).all()
-    ref_analyses = [a for a in toutes if a.date_analyse < limite]
-    rec_analyses = [a for a in toutes if a.date_analyse >= limite]
     version = db.query(models.ModelVersion).filter(models.ModelVersion.en_production == True).first()  # noqa: E712
+    # Modele issu d'un reentrainement : nouvelle reference, et performance jugee
+    # sur ses propres decisions (pas sur les scores de l'ancien modele)
+    debut_ref = version.debut_reference if version else None
+    ref_analyses = [a for a in toutes if a.date_analyse < limite and (debut_ref is None or a.date_analyse >= debut_ref)]
+    rec_analyses = [a for a in toutes if a.date_analyse >= limite]
+    analyses_modele = [a for a in toutes if a.model_version_id == version.id] if debut_ref else toutes
 
     periodes = {
         "reference": {"analyses": len(ref_analyses),
@@ -347,7 +354,7 @@ def etat_du_modele(db: Session) -> dict:
         "recente": {"analyses": len(rec_analyses), "jours": JOURS_RECENT},
         "minimum": MIN_ANALYSES,
     }
-    perf = _performance(toutes, maintenant, version)
+    perf = _performance(analyses_modele, maintenant, version, toutes)
     suffisant = len(ref_analyses) >= MIN_ANALYSES and len(rec_analyses) >= MIN_ANALYSES
 
     variables, predictions = [], None
@@ -377,7 +384,10 @@ def etat_du_modele(db: Session) -> dict:
         "seuils": {"modere": SEUIL_MODERE, "fort": SEUIL_FORT, "auc": SEUIL_AUC},
         "modele": {"algorithme": version.algorithme if version else None,
                    "auc": version.auc if version else None,
-                   "version": _numero_version(db, version) if version else None},
+                   "version": _numero_version(db, version) if version else None,
+                   "issu_reentrainement": bool(debut_ref),
+                   "mise_en_service": _locale(version.date_creation).strftime("%d/%m/%Y") if version and version.date_creation else None,
+                   "auc_validation": version.auc_reelle if version else None},
         "donnees": {"variables": variables, "psi_max": psi_max,
                     "niveau": niveau_donnees, "detail": variables[0] if variables else None,
                     "phrase": _phrase_detail(variables[0]) if variables else ""},

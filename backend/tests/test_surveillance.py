@@ -304,3 +304,73 @@ def test_les_colonnes_manquantes_sont_ajoutees(tmp_path, monkeypatch):
     assert {"statut", "auc_reelle", "date_retrait"} <= {c["name"] for c in inspect(ancien).get_columns("model_versions")}
     with ancien.connect() as c:
         assert c.execute(text("SELECT titre FROM notifications")).scalar() == "ancienne"
+
+
+# ---------------------------------------------------------------------------
+# Apres une mise en service : nouvelle reference, performance du nouveau modele
+# ---------------------------------------------------------------------------
+def test_nouvelle_reference_apres_mise_en_service(base):
+    db = SessionLocal()
+    _peupler(db, base.agent1, derive=True)
+    assert etat_du_modele(db)["etat"] == "alerte"
+    ancienne = db.query(models.ModelVersion).first()
+    ancienne.en_production = False
+    db.add(models.ModelVersion(algorithme="LightGBM", auc=0.76, en_production=True, statut="production",
+                               auc_reelle=0.71, debut_reference=MAINTENANT - timedelta(days=30)))
+    db.commit()
+    # Les analyses recentes servent de reference : il n'y en a plus assez avant la fenetre recente
+    etat = etat_du_modele(db)
+    assert etat["periodes"]["reference"]["analyses"] == 0
+    # La performance ne juge que les decisions du nouveau modele (aucune encore)
+    assert etat["performance"]["issues"] == 0
+    assert etat["modele"]["issu_reentrainement"] and etat["modele"]["auc_validation"] == 0.71
+    assert not any(c["atteinte"] for c in etat["regle"]["conditions"])
+    # Les issues a renseigner concernent toujours tous les credits
+    assert etat["performance"]["issues_en_attente"] >= 0
+    db.close()
+
+
+def test_reentrainement_complet_sur_un_socle_synthetique(base, tmp_path, monkeypatch):
+    """Le vrai reentrainement, sur un petit socle synthetique et une copie du modele."""
+    import shutil
+    import numpy as np
+    import pandas as pd
+    from app import generer_donnees_test as g, model_service
+    random.seed(3)
+    np.random.seed(3)
+    service = model_service.ServiceModele()
+    # Socle : le modele actuel y est fiable
+    socle = [g.dossier(random.betavariate(1.15, 1.6)) for _ in range(1500)]
+    p = np.array(service.predire_lot(socle))
+    df = pd.DataFrame(socle)
+    df["DAYS_BIRTH"] = -(df.pop("AGE_ANNEES") * 365).astype(int)
+    df["DAYS_EMPLOYED"] = -(df.pop("ANCIENNETE_EMPLOI_ANNEES") * 365).astype(int)
+    df.pop("EMPLOI_ANORMAL")
+    df["TARGET"] = (np.random.rand(len(df)) < 0.22 * p).astype(int)
+    df.to_csv(tmp_path / "socle.csv", index=False)
+    # Issues reelles de la banque, au profil local
+    db = SessionLocal()
+    locaux = [g.dossier(random.betavariate(1.15, 1.6), local=True) for _ in range(300)]
+    for d, proba in zip(locaux, service.predire_lot(locaux)):
+        a = models.Analyse(user_id=base.agent1, decision="ACCORDE", probabilite_defaut=proba,
+                           donnees_dossier=json.dumps(d), date_analyse=MAINTENANT - timedelta(days=90))
+        a.resultat_reel = "defaut" if random.random() < g._risque_local(a) else "rembourse"
+        db.add(a)
+    db.commit()
+    # Copie du modele : le fichier du depot n'est jamais modifie par le test
+    copie = tmp_path / "modele.pkl"
+    shutil.copy(model_service.CHEMIN_MODELE, copie)
+    monkeypatch.setattr(reentrainement, "CHEMIN_CSV", str(tmp_path / "socle.csv"))
+    monkeypatch.setattr(reentrainement, "CHEMIN_MODELE", str(copie))
+    monkeypatch.setattr(reentrainement, "_recharger_modele", lambda: None)
+
+    r = reentrainement.reentrainer(db, avec_mlflow=False, auteur="Test")
+    assert r["part_donnees_locales"] == 0.3
+    assert r["jeu_comparaison"].startswith("150 issues")
+    versions = db.query(models.ModelVersion).order_by(models.ModelVersion.id).all()
+    if r["promu"]:
+        assert versions[0].statut == "retire" and not versions[0].en_production
+        assert versions[-1].en_production and versions[-1].debut_reference is not None
+    else:
+        assert versions[-1].statut == "rejete" and versions[0].en_production
+    db.close()

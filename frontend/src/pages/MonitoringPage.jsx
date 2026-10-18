@@ -147,6 +147,11 @@ export default function MonitoringPage() {
   const erreurRetrain = !enCours && statut?.message?.startsWith("Erreur");
   const recent = etat.etat === "alerte" || donnees.niveau !== "stable" ? ORANGE : BLEU;
   const insuffisant = etat.etat === "insuffisant";
+  // Modele mis en service par un reentrainement, dont les premieres issues ne sont pas encore connues
+  const nouveauModele = modele.issu_reentrainement && perf.issues < perf.issues_minimum;
+  const texteEtat = etat.etat === "ok" && perf.issues < perf.issues_minimum
+    ? "Modèle sous contrôle : aucune dérive significative, performance réelle à confirmer quand les premières issues seront connues"
+    : e.texte;
   const optionsBase = (y) => ({ responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
     plugins: { legend: { display: false } },
     scales: { x: { grid: { display: false }, ticks: { color: axe.color, font: { size: 10 } } },
@@ -247,10 +252,10 @@ export default function MonitoringPage() {
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl border mb-5 flex-wrap" style={{ borderColor: e.couleur + "55", background: e.couleur + (isDark ? "14" : "0b") }}>
         <span className="w-2 h-2 rounded-full" style={{ background: e.couleur }} />
         <span className="text-xs font-medium" style={{ color: s.c(e.couleur) }}>
-          {e.texte}{etat.etat === "alerte" && ` : ${regle.atteintes} condition${regle.atteintes > 1 ? "s" : ""} sur 3 atteinte${regle.atteintes > 1 ? "s" : ""}`}
+          {texteEtat}{etat.etat === "alerte" && ` : ${regle.atteintes} condition${regle.atteintes > 1 ? "s" : ""} sur 3 atteinte${regle.atteintes > 1 ? "s" : ""}`}
         </span>
         <span className={"text-xs ml-auto " + s.gris}>
-          Référence : {periodes.reference.analyses} analyses{periodes.reference.debut ? ` (${periodes.reference.debut} au ${periodes.reference.fin})` : ""}, récent : {periodes.recente.analyses} analyses sur {periodes.recente.jours} jours
+          {modele.issu_reentrainement ? "Nouvelle référence" : "Référence"} : {periodes.reference.analyses} analyses{periodes.reference.debut ? ` (${periodes.reference.debut} au ${periodes.reference.fin})` : ""}, récent : {periodes.recente.analyses} analyses sur {periodes.recente.jours} jours
         </span>
       </div>
 
@@ -258,8 +263,10 @@ export default function MonitoringPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         {[
           ["AUC à l'entraînement", virgule(modele.auc, 3), null, modele.algorithme ? `${modele.algorithme}, v${modele.version}` : "Aucun modèle enregistré"],
-          ["AUC réelle", virgule(perf.auc), perf.auc === null ? null : aucBasse ? ROUGE : VERT,
-            perf.issues >= perf.issues_minimum ? `Sur ${perf.issues} crédits à l'issue connue` : `${perf.issues} issues sur ${perf.issues_minimum} nécessaires`],
+          nouveauModele
+            ? ["AUC réelle", virgule(modele.auc_validation, 3), modele.auc_validation ? VERT : null, "À la validation, sur des issues non vues"]
+            : ["AUC réelle", virgule(perf.auc), perf.auc === null ? null : aucBasse ? ROUGE : VERT,
+              perf.issues >= perf.issues_minimum ? `Sur ${perf.issues} crédits à l'issue connue` : `${perf.issues} issues sur ${perf.issues_minimum} nécessaires`],
           ["Dérive des prédictions", predictions ? `PSI ${virgule(predictions.psi)}` : "—", predictions ? nivPred.couleur : null,
             predictions ? `Taux de refus : ${pct(predictions.taux_refus_reference)} → ${pct(predictions.taux_refus_recent)}` : "Pas assez d'analyses"],
           ["Statut dérive", nivDonnees.majuscules, donnees.niveau === "inconnu" ? null : nivDonnees.couleur,
@@ -396,6 +403,18 @@ export default function MonitoringPage() {
       {/* 3. Performance réelle */}
       <Section s={s} numero="3" titre="La performance réelle : le modèle se trompe-t-il plus ?"
         sousTitre="Calculée sur les crédits accordés dont l'issue est connue, par mois d'octroi. Les crédits trop récents n'ont pas encore d'issue.">
+        {nouveauModele ? (
+          <div className="px-5 pt-4">
+            <div className={"rounded-xl border px-4 py-3.5 " + (isDark ? "border-emerald-900 bg-emerald-950/30" : "border-emerald-100 bg-emerald-50/60")}>
+              <p className="text-sm font-semibold" style={{ color: s.c(VERT) }}>Modèle v{modele.version} en service depuis le {modele.mise_en_service}</p>
+              <p className={"text-sm mt-1 leading-relaxed " + s.fort}>
+                Sa performance réelle sera mesurée sur ses propres décisions, au fur et à mesure que leurs issues seront connues
+                ({perf.issues} sur {perf.issues_minimum} nécessaires).
+                {modele.auc_validation ? ` À la validation, il a obtenu une AUC de ${virgule(modele.auc_validation, 3)} sur des issues réelles qu'il n'avait pas vues.` : ""}
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className={deuxColonnes}>
           <div className="px-5 py-4">
             <Legende isDark={isDark} items={[["AUC sur les issues réelles (nombre d'issues)", axe.ligne], ["Seuil d'alerte (0,70)", ROUGE, true]]} />
@@ -406,7 +425,8 @@ export default function MonitoringPage() {
             <Graphique config={cfgDefaut} hauteur={200} />
           </div>
         </div>
-        <div className="px-5 pb-5">
+        )}
+        <div className={"px-5 pb-5" + (nouveauModele ? " pt-3" : "")}>
           <p className={s.note}>
             {perf.issues} issues connues sur les 6 derniers mois{perf.issues < perf.issues_minimum ? ` (${perf.issues_minimum} nécessaires pour juger la performance)` : ""}, {perf.issues_en_attente} crédits attendent encore la leur.
             {" "}Limites : l'issue d'un crédit n'est connue qu'après plusieurs mois, et seulement pour les crédits accordés. On ne saura jamais si un client refusé aurait remboursé (biais de sélection).

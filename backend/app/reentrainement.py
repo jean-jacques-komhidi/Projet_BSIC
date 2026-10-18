@@ -7,7 +7,9 @@ Ce module reentraine les modeles en combinant deux sources de donnees :
 - les analyses reelles resolues de la base (celles dont le resultat_reel est
   connu : 'rembourse' ou 'defaut').
 
-Les trois modeles sont reentraines ; le meilleur devient le candidat. Il est
+Les issues reelles, peu nombreuses, recoivent 30 % du poids total de
+l'apprentissage (donnees locales et recentes). Les trois modeles sont
+reentraines ; le meilleur devient le candidat. Il est
 compare au modele en service sur les memes donnees et ne le remplace que s'il
 fait mieux (principe champion / challenger). La decision est enregistree dans
 les versions du modele.
@@ -17,7 +19,7 @@ Ce module est appele par la route /reentrainer.
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import joblib
 import numpy as np
 import pandas as pd
@@ -38,6 +40,12 @@ from sqlalchemy.orm import Session
 from . import models
 
 GRAINE = 42
+
+# Poids des issues reelles de la banque dans l'apprentissage. Elles sont peu
+# nombreuses face au socle (environ 300 000 dossiers etrangers) : sans
+# ponderation, elles ne pesent rien. Comme en banque, on donne plus de poids aux
+# donnees locales et recentes : ici 30 % du poids total, quel que soit leur nombre.
+PART_DONNEES_LOCALES = 0.30
 
 # Chemins : le CSV socle et le modele de sortie
 CHEMIN_CSV = os.path.join(os.path.dirname(__file__), "..", "notebook", "application_train.csv")
@@ -157,7 +165,11 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=GRAINE, stratify=y)
-    if X_reel_app is not None:
+    poids = np.ones(len(X_train))
+    nb_reel_app = 0 if X_reel_app is None else len(X_reel_app)
+    if nb_reel_app:
+        poids_local = PART_DONNEES_LOCALES / (1 - PART_DONNEES_LOCALES) * len(X_train) / nb_reel_app
+        poids = np.concatenate([poids, np.full(nb_reel_app, poids_local)])
         X_train = pd.concat([X_train, X_reel_app], ignore_index=True)
         y_train = pd.concat([y_train, y_reel_app], ignore_index=True)
 
@@ -194,7 +206,7 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
     resultats = {}
     for nom, clf in modeles.items():
         pipe = Pipeline([("prep", preparateur), ("clf", clf)])
-        pipe.fit(X_train, y_train)
+        pipe.fit(X_train, y_train, clf__sample_weight=poids)
         auc_test = roc_auc_score(y_test, pipe.predict_proba(X_test)[:, 1])
         resultats[nom] = {"pipeline": pipe, "auc_test": auc_test}
         if avec_mlflow:
@@ -203,6 +215,7 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
                     mlflow.log_param("algorithme", nom)
                     mlflow.log_param("nb_donnees_socle", nb_socle)
                     mlflow.log_param("nb_donnees_reelles", nb_reel)
+                    mlflow.log_param("part_donnees_locales", PART_DONNEES_LOCALES if nb_reel_app else 0)
                     mlflow.log_metric("auc_test", auc_test)
             except Exception:
                 avec_mlflow = False
@@ -236,8 +249,11 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
             en_service.date_retrait = maintenant
             if reelle and auc_actuel is not None:
                 en_service.auc_reelle = round(auc_actuel, 4)
+        # Nouvelle reference de surveillance : les mois recents que le nouveau modele a appris
+        from .surveillance_service import JOURS_REFERENCE_NOUVEAU_MODELE
         db.add(models.ModelVersion(algorithme=nom_candidat, auc=round(auc_socle, 4), en_production=True,
-                                   statut="production", auc_reelle=round(auc_candidat, 4) if reelle else None))
+                                   statut="production", auc_reelle=round(auc_candidat, 4) if reelle else None,
+                                   debut_reference=maintenant - timedelta(days=JOURS_REFERENCE_NOUVEAU_MODELE)))
     else:
         db.add(models.ModelVersion(algorithme=nom_candidat, auc=round(auc_socle, 4), en_production=False,
                                    statut="rejete", auc_reelle=round(auc_candidat, 4) if reelle else None))
@@ -246,6 +262,12 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
     db.commit()
     if promu:
         _recharger_modele()
+        # Verification immediate : l'administrateur voit tout de suite le nouvel etat
+        try:
+            from .alertes_service import verifier_et_notifier
+            verifier_et_notifier(db, forcer=True)
+        except Exception:
+            pass
 
     return {
         "promu": promu,
@@ -256,6 +278,7 @@ def reentrainer(db: Session, avec_mlflow=True, auteur: str = None):
         "jeu_comparaison": jeu,
         "donnees_socle": nb_socle,
         "donnees_reelles_integrees": nb_reel,
+        "part_donnees_locales": PART_DONNEES_LOCALES if nb_reel_app else 0,
         "total_donnees": nb_socle + nb_reel,
         "auteur": auteur,
     }
