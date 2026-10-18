@@ -334,7 +334,7 @@ export default function MonitoringPage() {
           <div className={deuxColonnes}>
             <div className="px-5 py-4 overflow-x-auto">
               <table className="w-full">
-                <thead><tr>{["Variable", "PSI", "Dérive"].map((h) => <th key={h} className={"text-left text-[11px] font-medium py-2 " + s.gris}>{h}</th>)}</tr></thead>
+                <thead><tr>{["Variable", "PSI", "Dérive"].map((h) => <th key={h} className={"text-left text-[11px] font-medium py-2 " + (h === "Dérive" ? "pl-6 " : "") + s.gris}>{h}</th>)}</tr></thead>
                 <tbody>
                   {donnees.variables.map((v) => {
                     const n = NIVEAUX[v.niveau];
@@ -349,10 +349,10 @@ export default function MonitoringPage() {
                               <div className="absolute -top-0.5 -bottom-0.5 w-px bg-gray-400" style={{ left: "25%" }} />
                               <div className="absolute -top-0.5 -bottom-0.5 w-px bg-gray-400" style={{ left: "62.5%" }} />
                             </div>
-                            <span className="text-sm font-semibold w-10 text-right" style={{ color: v.significatif ? s.c(c) : undefined }}>{virgule(v.psi)}</span>
+                            <span className="text-sm font-semibold w-11 text-right tabular-nums" style={{ color: v.significatif ? s.c(c) : undefined }}>{virgule(v.psi)}</span>
                           </div>
                         </td>
-                        <td className="py-2">
+                        <td className="py-2 pl-6">
                           <span className="text-xs px-2 py-0.5 rounded-full border font-medium" style={{ color: s.c(c), borderColor: c + "55" }}>{n.libelle}</span>
                           {!v.significatif && v.psi >= 0.1 && <span className={"block text-[11px] mt-0.5 " + s.gris}>écart dû au hasard possible</span>}
                         </td>
