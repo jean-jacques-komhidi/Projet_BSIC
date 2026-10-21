@@ -440,6 +440,9 @@ def supprimer_analyse(
     client = db.query(models.Client).filter(models.Client.id == analyse.client_id).first()
     nom = client.nom if client else "client inconnu"
     date = analyse.date_analyse.strftime("%d/%m/%Y") if analyse.date_analyse else "?"
+    # Les conversations qui avaient joint ce dossier le perdent, sans etre supprimees
+    db.query(models.Conversation).filter(models.Conversation.analyse_id == analyse_id) \
+        .update({models.Conversation.analyse_id: None}, synchronize_session=False)
     db.delete(analyse)
     db.commit()
     logger.warning(f"Analyse {analyse_id} ({nom}, {date}) supprimee par {admin.email}")

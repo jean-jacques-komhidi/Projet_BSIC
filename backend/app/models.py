@@ -135,6 +135,8 @@ class Conversation(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     date_creation = Column(DateTime, default=datetime.utcnow)
     date_maj = Column(DateTime, default=datetime.utcnow)
+    # Dossier joint a la conversation (bouton « Joindre un dossier »)
+    analyse_id = Column(Integer, ForeignKey("analyses.id"), nullable=True)
 
     messages = relationship("Message", back_populates="conversation",
                             cascade="all, delete-orphan", order_by="Message.date_creation")

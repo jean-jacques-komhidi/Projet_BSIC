@@ -14,6 +14,7 @@ Chaque conversation appartient a l'utilisateur qui l'a creee. L'assistant
 garde le contexte de la conversation (les messages precedents) pour repondre.
 """
 
+import re
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone
@@ -42,15 +43,56 @@ class ConversationResume(BaseModel):
     id: int
     titre: str
     date_maj: datetime
+    apercu: Optional[str] = None
     class Config:
         from_attributes = True
+
+class DossierJoint(BaseModel):
+    id: int
+    reference: str
+    client: Optional[str] = None
 
 class ConversationDetail(BaseModel):
     id: int
     titre: str
     messages: list[MessageReponse]
+    dossier: Optional[DossierJoint] = None
     class Config:
         from_attributes = True
+
+
+LONGUEUR_APERCU = 90
+
+
+def _apercu(conv) -> Optional[str]:
+    """Debut de la derniere reponse de CrediBot, sans la mise en forme Markdown."""
+    reponses = [m for m in conv.messages if m.role == "assistant" and m.contenu]
+    if not reponses:
+        return None
+    texte = re.sub(r"\[PDF:\d+\]", "", reponses[-1].contenu)
+    texte = re.sub(r"[*_#`>|]+", "", texte)
+    texte = " ".join(texte.split())
+    return texte[:LONGUEUR_APERCU] + ("…" if len(texte) > LONGUEUR_APERCU else "")
+
+
+def _dossier(db: Session, analyse_id) -> Optional[dict]:
+    """Reference et client du dossier joint, ou None s'il n'existe pas (ou plus)."""
+    if not analyse_id:
+        return None
+    a = db.query(models.Analyse).filter(models.Analyse.id == analyse_id).first()
+    if not a:
+        return None
+    client = db.query(models.Client).filter(models.Client.id == a.client_id).first()
+    annee = a.date_analyse.year if a.date_analyse else 0
+    return {"id": a.id, "reference": f"CRED-{annee}-{a.id:04d}", "client": client.nom if client else None}
+
+
+def _joindre(db: Session, conv, analyse_id) -> Optional[int]:
+    """Memorise le dossier joint au message (None = aucun) et renvoie son id s'il existe."""
+    if analyse_id is not None and not db.query(models.Analyse.id).filter(models.Analyse.id == analyse_id).first():
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    conv.analyse_id = analyse_id
+    return analyse_id
 
 class QuestionEnvoi(BaseModel):
     question: str = Field(..., description="La question de l'agent")
@@ -77,10 +119,12 @@ def lister_conversations(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Liste les conversations de l'utilisateur, les plus recentes d'abord."""
-    return db.query(models.Conversation).filter(
+    """Liste les conversations de l'utilisateur, les plus recentes d'abord,
+    avec un apercu de la derniere reponse."""
+    convs = db.query(models.Conversation).filter(
         models.Conversation.user_id == utilisateur.id
     ).order_by(models.Conversation.date_maj.desc()).all()
+    return [{"id": c.id, "titre": c.titre, "date_maj": c.date_maj, "apercu": _apercu(c)} for c in convs]
 
 
 # --- READ : lire une conversation avec ses messages ---
@@ -97,7 +141,8 @@ def lire_conversation(
     ).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation introuvable")
-    return conv
+    return {"id": conv.id, "titre": conv.titre, "messages": conv.messages,
+            "dossier": _dossier(db, conv.analyse_id)}
 
 
 # --- POST : envoyer un message et obtenir la reponse ---
@@ -126,6 +171,8 @@ def envoyer_message(
         for m in conv.messages[-10:]
     ]
     premier_message = len(conv.messages) == 0
+
+    _joindre(db, conv, envoi.analyse_id)
 
     # Enregistrer la question de l'utilisateur
     msg_user = models.Message(role="user", contenu=envoi.question, conversation_id=conv.id)
@@ -174,6 +221,8 @@ def envoyer_message_flux(
 
     historique = [{"role": m.role, "contenu": m.contenu} for m in conv.messages[-10:]]
     premier_message = len(conv.messages) == 0
+
+    _joindre(db, conv, envoi.analyse_id)
 
     # La question est enregistree tout de suite
     db.add(models.Message(role="user", contenu=envoi.question, conversation_id=conv.id))
