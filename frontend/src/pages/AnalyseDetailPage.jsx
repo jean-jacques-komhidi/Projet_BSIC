@@ -10,6 +10,7 @@ import {
   Clock, Ban, TrendingUp, TrendingDown, Minus, AlertTriangle, SlidersHorizontal, RotateCcw, ArrowRight, Trash2,
 } from "lucide-react";
 import Header from "../components/ui/Header";
+import { ajouterRecent, reference } from "../utils/recents";
 import { getAnalyse, renseignerResultat, telechargerPdf, simulerAnalyse, supprimerAnalyse } from "../services/analyseService";
 
 const BLEU = "#2E86C1", VERT = "#0F6E56", ORANGE = "#d97706", ROUGE = "#c0392b";
@@ -663,7 +664,14 @@ export default function AnalyseDetailPage() {
 
   function charger() {
     return getAnalyse(id)
-      .then((a) => setEtat({ id, analyse: a, recu: Date.now() }))
+      .then((a) => {
+        setEtat({ id, analyse: a, recu: Date.now() });
+        ajouterRecent({
+          type: "analyse", id: a.id, titre: `${reference(a)}${a.nom_client ? " · " + a.nom_client : ""}`,
+          badge: a.decision === "REFUSE" ? { texte: "Refusé", couleur: "#c0392b" } : a.decision === "ACCORDE" ? { texte: "Accordé", couleur: "#0F6E56" } : null,
+          chemin: `/analyse/${a.id}`,
+        });
+      })
       .catch(() => setEtat({ id, analyse: null, recu: Date.now() }));
   }
   useEffect(() => { charger(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -707,7 +715,10 @@ export default function AnalyseDetailPage() {
 
   return (
     <div>
-      <Header title="Détail de l'analyse" subtitle="Historique des analyses" />
+      <Header
+        title={analyse ? `Dossier de ${analyse.nom_client || "client inconnu"}` : "Détail de l'analyse"}
+        subtitle={analyse ? `Analyse du ${dateLongue(analyse.date_analyse)}${analyse.montant ? " · " + fcfa(analyse.montant) : ""}` : "Historique des analyses"}
+        fil={[{ libelle: "Historique", vers: "/historique" }, { libelle: analyse ? reference(analyse) : "Analyse" }]} />
       {contenu}
     </div>
   );

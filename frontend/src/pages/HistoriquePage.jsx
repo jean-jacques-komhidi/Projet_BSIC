@@ -76,7 +76,7 @@ export default function HistoriquePage() {
   // Filtre « Issue à renseigner » pré-sélectionné depuis une notification (?issue=a_renseigner)
   const [issue, setIssue] = useState(() => new URLSearchParams(window.location.search).get("issue") || "toutes");
   const [periode, setPeriode] = useState("tout");
-  const [recherche, setRecherche] = useState("");
+  const [recherche, setRecherche] = useState(() => new URLSearchParams(window.location.search).get("recherche") || "");
   const [pdfEnCours, setPdfEnCours] = useState(null);
   const [maintenant] = useState(() => Date.now());
   const location = useLocation();

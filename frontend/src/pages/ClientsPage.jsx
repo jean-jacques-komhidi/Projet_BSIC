@@ -44,7 +44,8 @@ export default function ClientsPage() {
   const [erreur, setErreur] = useState("");
   const [message, setMessage] = useState("");
   const [recherche, setRecherche] = useState("");
-  const [modale, setModale] = useState({ ouverte: false, client: null });
+  // Ouverture directe du formulaire « Nouveau client » depuis la recherche (?nouveau=1)
+  const [modale, setModale] = useState(() => ({ ouverte: new URLSearchParams(window.location.search).get("nouveau") === "1", client: null }));
   const [aSupprimer, setASupprimer] = useState(null);
   const [suppression, setSuppression] = useState({ enCours: false, erreur: "" });
 
