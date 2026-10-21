@@ -716,7 +716,7 @@ export default function AnalyseDetailPage() {
   return (
     <div>
       <Header
-        title={analyse ? `Dossier de ${analyse.nom_client || "client inconnu"}` : "Détail de l'analyse"}
+        title={analyse ? (analyse.nom_client ? `Dossier ${/^[aeiouyàâäéèêëîïôöùûü]/i.test(analyse.nom_client) ? "d'" : "de "}${analyse.nom_client}` : "Dossier du client") : "Détail de l'analyse"}
         subtitle={analyse ? `Analyse du ${dateLongue(analyse.date_analyse)}${analyse.montant ? " · " + fcfa(analyse.montant) : ""}` : "Historique des analyses"}
         fil={[{ libelle: "Historique", vers: "/historique" }, { libelle: analyse ? reference(analyse) : "Analyse" }]} />
       {contenu}
