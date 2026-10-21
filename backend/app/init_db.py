@@ -18,6 +18,9 @@ from . import models  # importe les tables pour qu'elles soient enregistrées
 # Colonnes ajoutées après la création initiale des tables : create_all ne modifie
 # pas une table existante, on les ajoute donc ici si elles manquent.
 COLONNES_AJOUTEES = {
+    "users": {
+        "date_changement_mdp": "TIMESTAMP",
+    },
     "notifications": {
         "destinataire_id": "INTEGER REFERENCES users(id)",
         "categorie": "VARCHAR(20)",

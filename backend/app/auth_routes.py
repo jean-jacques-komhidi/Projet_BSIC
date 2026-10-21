@@ -18,6 +18,8 @@ reservee a l'administrateur. Le tout premier administrateur est cree par le
 script app/creer_admin.py, jamais par une route publique.
 """
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -33,7 +35,16 @@ from .schemas_auth import (
 from .security import (
     hacher_mot_de_passe, verifier_mot_de_passe, creer_jeton,
     utilisateur_courant, administrateur_courant,
+    valider_mot_de_passe, message_mot_de_passe,
 )
+
+DECALAGE_TCHAD = timedelta(hours=1)
+
+
+def _verifier_regles(mot_de_passe, nom, email):
+    erreurs = valider_mot_de_passe(mot_de_passe, nom, email)
+    if erreurs:
+        raise HTTPException(status_code=400, detail=message_mot_de_passe(erreurs))
 
 router = APIRouter(prefix="/auth", tags=["Authentification et utilisateurs"])
 
@@ -79,21 +90,20 @@ def modifier_mes_informations(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Permet a l'utilisateur connecte de modifier ses propres informations
-    (nom, e-mail, mot de passe). Le role ne peut pas etre change par soi-meme."""
-    if donnees.nom is not None:
-        utilisateur.nom = donnees.nom
-    if donnees.email is not None:
-        # verifier que le nouvel e-mail n'est pas deja pris par un autre
-        autre = db.query(models.User).filter(
-            models.User.email == donnees.email,
-            models.User.id != utilisateur.id,
-        ).first()
-        if autre:
-            raise HTTPException(status_code=400, detail="Cet e-mail est deja utilise")
-        utilisateur.email = donnees.email
+    """Permet a l'utilisateur connecte de modifier son nom.
+
+    L'e-mail (identifiant de connexion) et le role sont geres par
+    l'administrateur ; le mot de passe se change par /auth/moi/mot-de-passe,
+    qui exige l'ancien mot de passe."""
+    if donnees.email is not None and donnees.email != utilisateur.email:
+        raise HTTPException(status_code=403, detail="L'adresse e-mail est modifiée par l'administrateur.")
     if donnees.mot_de_passe is not None:
-        utilisateur.mot_de_passe = hacher_mot_de_passe(donnees.mot_de_passe)
+        raise HTTPException(status_code=400, detail="Changez votre mot de passe depuis la rubrique Mot de passe.")
+    if donnees.nom is not None:
+        nom = donnees.nom.strip()
+        if not 2 <= len(nom) <= 100:
+            raise HTTPException(status_code=400, detail="Le nom doit faire entre 2 et 100 caractères.")
+        utilisateur.nom = nom
     # Note : le role n'est volontairement PAS modifiable ici (securite)
 
     db.commit()
@@ -107,20 +117,40 @@ def mes_statistiques(
     db: Session = Depends(get_db),
     utilisateur: models.User = Depends(utilisateur_courant),
 ):
-    """Renvoie les statistiques d'activite de l'utilisateur connecte."""
-    total = db.query(models.Analyse).filter(
-        models.Analyse.user_id == utilisateur.id).count()
-    accordes = db.query(models.Analyse).filter(
-        models.Analyse.user_id == utilisateur.id,
-        models.Analyse.decision == "ACCORDE").count()
-    refuses = db.query(models.Analyse).filter(
-        models.Analyse.user_id == utilisateur.id,
-        models.Analyse.decision == "REFUSE").count()
+    """Statistiques d'activite (12 derniers mois), bilan de securite et modele en service."""
+    maintenant = datetime.utcnow()
+    mes = db.query(models.Analyse).filter(models.Analyse.user_id == utilisateur.id,
+                                          models.Analyse.date_analyse >= maintenant - timedelta(days=365))
+    total = mes.count()
+    accordes = mes.filter(models.Analyse.decision == "ACCORDE").count()
+    refuses = mes.filter(models.Analyse.decision == "REFUSE").count()
+    # Credits accordes depuis plus de 30 jours dont l'issue n'est pas encore renseignee
+    issues = db.query(models.Analyse).filter(
+        models.Analyse.user_id == utilisateur.id, models.Analyse.decision == "ACCORDE",
+        models.Analyse.resultat_reel.is_(None),
+        models.Analyse.date_analyse < maintenant - timedelta(days=30)).count()
+
+    version = db.query(models.ModelVersion).filter(models.ModelVersion.en_production == True).first()  # noqa: E712
+    modele = None
+    if version:
+        numero = db.query(models.ModelVersion).filter(models.ModelVersion.id <= version.id).count()
+        etat = db.get(models.EtatSurveillance, "etat")
+        modele = {
+            "version": numero, "algorithme": version.algorithme,
+            "mise_en_service": (version.date_creation + DECALAGE_TCHAD).strftime("%d/%m/%Y") if version.date_creation else None,
+            "auc_reelle": version.auc_reelle, "etat": etat.valeur if etat else None,
+        }
+    changement = utilisateur.date_changement_mdp
     return {
         "analyses_realisees": total,
         "credits_accordes": accordes,
         "credits_refuses": refuses,
+        "taux_accord": round(100 * accordes / total) if total else None,
+        "issues_a_renseigner": issues,
         "membre_depuis": utilisateur.date_creation.strftime("%d/%m/%Y") if utilisateur.date_creation else None,
+        "mot_de_passe_change_le": (changement + DECALAGE_TCHAD).strftime("%d/%m/%Y") if changement else None,
+        "jours_depuis_changement": (maintenant - changement).days if changement else None,
+        "modele": modele,
     }
 
 
@@ -139,9 +169,11 @@ def changer_mot_de_passe(
     """Change le mot de passe apres verification de l'ancien."""
     if not verifier_mot_de_passe(donnees.ancien_mot_de_passe, utilisateur.mot_de_passe):
         raise HTTPException(status_code=400, detail="L'ancien mot de passe est incorrect")
-    if len(donnees.nouveau_mot_de_passe) < 6:
-        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit faire au moins 6 caracteres")
+    if donnees.nouveau_mot_de_passe == donnees.ancien_mot_de_passe:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit être différent de l'ancien.")
+    _verifier_regles(donnees.nouveau_mot_de_passe, utilisateur.nom, utilisateur.email)
     utilisateur.mot_de_passe = hacher_mot_de_passe(donnees.nouveau_mot_de_passe)
+    utilisateur.date_changement_mdp = datetime.utcnow()
     db.commit()
     return {"message": "Mot de passe modifie avec succes"}
 
@@ -168,12 +200,14 @@ def creer_utilisateur(
 
     if donnees.role not in ("agent", "admin"):
         raise HTTPException(status_code=400, detail="Role invalide (agent ou admin)")
+    _verifier_regles(donnees.mot_de_passe, donnees.nom, donnees.email)
 
     utilisateur = models.User(
         nom=donnees.nom,
         email=donnees.email,
         mot_de_passe=hacher_mot_de_passe(donnees.mot_de_passe),
         role=donnees.role,
+        date_changement_mdp=datetime.utcnow(),
     )
     db.add(utilisateur)
     db.commit()
@@ -246,7 +280,9 @@ def modifier_utilisateur(
                 )
         utilisateur.role = donnees.role
     if donnees.mot_de_passe is not None:
+        _verifier_regles(donnees.mot_de_passe, utilisateur.nom, utilisateur.email)
         utilisateur.mot_de_passe = hacher_mot_de_passe(donnees.mot_de_passe)
+        utilisateur.date_changement_mdp = datetime.utcnow()
 
     db.commit()
     db.refresh(utilisateur)

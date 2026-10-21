@@ -19,6 +19,8 @@ class User(Base):
     mot_de_passe = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="agent")
     date_creation = Column(DateTime, default=datetime.utcnow)
+    # Date du dernier changement de mot de passe (bilan de securite du profil)
+    date_changement_mdp = Column(DateTime, nullable=True)
     analyses = relationship("Analyse", back_populates="utilisateur")
 
 

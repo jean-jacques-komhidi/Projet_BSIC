@@ -198,7 +198,8 @@ def generer(ajouter=False, derive=True):
             agent = db.query(models.User).filter(models.User.email == email).first()
             if not agent:
                 agent = models.User(nom=nom, email=email, role="agent",
-                                    mot_de_passe=hacher_mot_de_passe(MOT_DE_PASSE_AGENTS))
+                                    mot_de_passe=hacher_mot_de_passe(MOT_DE_PASSE_AGENTS),
+                                    date_changement_mdp=datetime.utcnow() - timedelta(days=12))
                 db.add(agent)
                 db.commit()
                 db.refresh(agent)

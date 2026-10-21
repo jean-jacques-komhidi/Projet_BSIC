@@ -112,7 +112,7 @@ export default function UtilisateurFormPage() {
               <div className="relative">
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="password" value={form.mot_de_passe} onChange={(e) => maj("mot_de_passe", e.target.value)}
-                  required={!estModification} minLength={6} className={inputClass} placeholder="••••••••" />
+                  required={!estModification} minLength={8} className={inputClass} placeholder="8 caractères, majuscule, minuscule et chiffre" />
               </div>
             </div>
 

@@ -11,7 +11,7 @@ class UtilisateurCreation(BaseModel):
     """Donnees pour creer un nouvel utilisateur."""
     nom: str = Field(..., description="Nom de l'utilisateur")
     email: EmailStr = Field(..., description="Adresse e-mail (identifiant de connexion)")
-    mot_de_passe: str = Field(..., min_length=6, description="Mot de passe (6 caracteres minimum)")
+    mot_de_passe: str = Field(..., min_length=8, description="Mot de passe (8 caracteres minimum, majuscule, minuscule, chiffre)")
     role: str = Field("agent", description="Role : 'agent' ou 'admin'")
 
 
@@ -20,7 +20,7 @@ class UtilisateurModification(BaseModel):
     seuls ceux fournis seront modifies."""
     nom: Optional[str] = None
     email: Optional[EmailStr] = None
-    mot_de_passe: Optional[str] = Field(None, min_length=6)
+    mot_de_passe: Optional[str] = Field(None, min_length=8)
     role: Optional[str] = None
 
 

@@ -48,6 +48,35 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/connexion")
 # ---------------------------------------------------------------------------
 # Mots de passe
 # ---------------------------------------------------------------------------
+LONGUEUR_MIN_MOT_DE_PASSE = 8
+
+
+def valider_mot_de_passe(mot_de_passe: str, nom: str = None, email: str = None) -> list:
+    """Renvoie la liste des regles non respectees (liste vide si le mot de passe est valable).
+
+    Regles : 8 caracteres minimum, une majuscule et une minuscule, un chiffre,
+    et ne pas contenir le nom ni la partie avant @ de l'e-mail."""
+    erreurs = []
+    mdp = mot_de_passe or ""
+    if len(mdp) < LONGUEUR_MIN_MOT_DE_PASSE:
+        erreurs.append(f"au moins {LONGUEUR_MIN_MOT_DE_PASSE} caractères")
+    if not (any(c.isupper() for c in mdp) and any(c.islower() for c in mdp)):
+        erreurs.append("une majuscule et une minuscule")
+    if not any(c.isdigit() for c in mdp):
+        erreurs.append("un chiffre")
+    bas = mdp.lower()
+    mots = [m for m in (nom or "").lower().split() if len(m) >= 3]
+    if email:
+        mots.append(email.split("@")[0].lower())
+    if any(m and m in bas for m in mots):
+        erreurs.append("ne pas contenir votre nom ni votre e-mail")
+    return erreurs
+
+
+def message_mot_de_passe(erreurs: list) -> str:
+    return "Le mot de passe doit respecter : " + ", ".join(erreurs) + "."
+
+
 def hacher_mot_de_passe(mot_de_passe: str) -> str:
     """Transforme un mot de passe en clair en une empreinte hachée."""
     return contexte_pwd.hash(mot_de_passe)
