@@ -95,3 +95,27 @@ def test_statistiques_du_profil():
     assert s["mot_de_passe_change_le"] is None
     assert s["modele"] == {"version": 1, "algorithme": "Gradient Boosting", "mise_en_service": s["modele"]["mise_en_service"],
                            "auc_reelle": 0.624, "etat": "ok"}
+
+
+def test_un_admin_change_son_email_avec_son_mot_de_passe():
+    db = SessionLocal()
+    db.add(models.User(nom="Admin", email="admin@bsic.td", mot_de_passe=hacher_mot_de_passe(MDP), role="admin"))
+    db.commit()
+    db.close()
+    r = client.post("/auth/connexion", data={"username": "admin@bsic.td", "password": MDP})
+    e = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    url = "/auth/moi/email"
+    assert client.put(url, json={"nouvel_email": "dg@bsic.td", "mot_de_passe": "faux"}, headers=e).status_code == 400
+    assert client.put(url, json={"nouvel_email": "fatime.abakar@bsic.td", "mot_de_passe": MDP}, headers=e).status_code == 400
+    assert client.put(url, json={"nouvel_email": "pas-un-email", "mot_de_passe": MDP}, headers=e).status_code == 422
+    r = client.put(url, json={"nouvel_email": "DG@bsic.td", "mot_de_passe": MDP}, headers=e)
+    assert r.status_code == 200 and r.json()["email"] == "dg@bsic.td"
+    # Le nouveau jeton fonctionne, et on se connecte avec le nouvel e-mail
+    nouveau = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert client.get("/auth/moi", headers=nouveau).json()["email"] == "dg@bsic.td"
+    assert client.post("/auth/connexion", data={"username": "dg@bsic.td", "password": MDP}).status_code == 200
+
+
+def test_un_agent_ne_change_pas_son_email():
+    r = client.put("/auth/moi/email", json={"nouvel_email": "moi@bsic.td", "mot_de_passe": MDP}, headers=_entetes())
+    assert r.status_code == 403

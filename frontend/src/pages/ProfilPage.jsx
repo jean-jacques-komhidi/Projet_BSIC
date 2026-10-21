@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import Header from "../components/ui/Header";
-import { modifierMonProfil, getMesStatistiques, changerMotDePasse } from "../services/authService";
+import { modifierMonProfil, getMesStatistiques, changerMotDePasse, changerMonEmail } from "../services/authService";
 import {
   User, Mail, Shield, Calendar, Lock, Clock, Sun, Globe, Cpu, BarChart3, Check,
   ChevronRight, ArrowLeft, Eye, EyeOff, ShieldCheck, ShieldAlert, Loader2, AlertTriangle,
@@ -103,6 +103,13 @@ export default function ProfilPage() {
   const [nom, setNom] = useState("");
   const [erreurNom, setErreurNom] = useState("");
 
+  // Changement de l'e-mail (administrateur)
+  const [editionEmail, setEditionEmail] = useState(false);
+  const [email, setEmail] = useState("");
+  const [mdpEmail, setMdpEmail] = useState("");
+  const [voirMdpEmail, setVoirMdpEmail] = useState(false);
+  const [erreurEmail, setErreurEmail] = useState("");
+
   // Changement du mot de passe
   const [ancien, setAncien] = useState("");
   const [nouveau, setNouveau] = useState("");
@@ -173,6 +180,19 @@ export default function ProfilPage() {
     } catch (e) {
       const d = e?.response?.data?.detail;
       setErreurNom(typeof d === "string" ? d : "Modification impossible.");
+    }
+  }
+
+  async function enregistrerEmail() {
+    setErreurEmail("");
+    try {
+      await changerMonEmail(email.trim(), mdpEmail);
+      await rafraichir();
+      setEditionEmail(false);
+      setMessage("Votre adresse e-mail a été changée. Utilisez-la à votre prochaine connexion.");
+    } catch (e) {
+      const d = e?.response?.data?.detail;
+      setErreurEmail(typeof d === "string" ? d : Array.isArray(d) ? "Adresse e-mail invalide." : "Modification impossible.");
     }
   }
 
@@ -329,7 +349,37 @@ export default function ProfilPage() {
           <Ligne s={s} Icone={User} libelle="Nom" valeur={utilisateur?.nom} aide="Affiché sur les fiches PDF et dans l'historique"
             onClick={() => { setNom(utilisateur?.nom || ""); setErreurNom(""); setMessage(null); setEditionNom(true); }} />
         )}
-        <Ligne s={s} Icone={Mail} libelle="E-mail" valeur={utilisateur?.email} aide="Modifiable uniquement par l'administrateur" />
+        {editionEmail ? (
+          <div className={"px-6 py-4 border-t " + s.trait}>
+            <label className="block max-w-md">
+              <span className={"block text-xs uppercase tracking-wider mb-2 " + s.texte}>Nouvelle adresse e-mail</span>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus
+                className={"w-full rounded-lg border bg-transparent px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-sky-500/40 " + s.bord + " " + s.fort} />
+            </label>
+            <label className="block max-w-md mt-3">
+              <span className={"block text-xs uppercase tracking-wider mb-2 " + s.texte}>Mot de passe actuel</span>
+              <span className={"flex items-center rounded-lg border focus-within:ring-2 focus-within:ring-sky-500/40 " + s.bord}>
+                <input type={voirMdpEmail ? "text" : "password"} value={mdpEmail} onChange={(e) => setMdpEmail(e.target.value)}
+                  className={"flex-1 bg-transparent px-3.5 py-2.5 text-sm outline-none " + s.fort} autoComplete="current-password" />
+                <button type="button" onClick={() => setVoirMdpEmail((v) => !v)} className={"px-3 " + s.icone} aria-label={voirMdpEmail ? "Masquer" : "Afficher"}>
+                  {voirMdpEmail ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </span>
+            </label>
+            <p className={"text-xs mt-2 " + s.gris}>Votre e-mail sert à vous connecter : votre mot de passe confirme que c'est bien vous.</p>
+            {erreurEmail && <p className="text-xs mt-2" style={{ color: s.c(ROUGE) }}>{erreurEmail}</p>}
+            <div className="flex gap-2 mt-3">
+              <button type="button" onClick={enregistrerEmail} disabled={!email.includes("@") || !mdpEmail}
+                className="px-4 py-2 rounded-md text-sm font-medium text-white disabled:opacity-40" style={{ background: BLEU }}>Enregistrer</button>
+              <button type="button" onClick={() => setEditionEmail(false)} className="px-4 py-2 rounded-md text-sm font-medium" style={{ color: s.c(BLEU) }}>Annuler</button>
+            </div>
+          </div>
+        ) : estAdmin ? (
+          <Ligne s={s} Icone={Mail} libelle="E-mail" valeur={utilisateur?.email} aide="Sert à vous connecter ; votre mot de passe sera demandé"
+            onClick={() => { setEmail(utilisateur?.email || ""); setMdpEmail(""); setErreurEmail(""); setMessage(null); setEditionEmail(true); }} />
+        ) : (
+          <Ligne s={s} Icone={Mail} libelle="E-mail" valeur={utilisateur?.email} aide="Modifiable uniquement par l'administrateur" />
+        )}
         <Ligne s={s} Icone={Shield} libelle="Rôle" valeur={libelleRole} aide={accesRole} />
         <Ligne s={s} Icone={Calendar} libelle="Membre depuis" valeur={stats?.membre_depuis || "—"} />
       </Carte>

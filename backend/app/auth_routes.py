@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from .database import get_db
 from . import models
@@ -176,6 +176,35 @@ def changer_mot_de_passe(
     utilisateur.date_changement_mdp = datetime.utcnow()
     db.commit()
     return {"message": "Mot de passe modifie avec succes"}
+
+
+# --- Changement de son propre e-mail (administrateur, mot de passe exige) ---
+class ChangementEmail(BaseModel):
+    nouvel_email: EmailStr
+    mot_de_passe: str
+
+
+@router.put("/moi/email")
+def changer_mon_email(
+    donnees: ChangementEmail,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(administrateur_courant),
+):
+    """Un administrateur change son propre e-mail (son identifiant de connexion).
+
+    Le mot de passe actuel est exige. Le jeton de connexion contient l'e-mail :
+    un nouveau jeton est renvoye pour que la session continue."""
+    if not verifier_mot_de_passe(donnees.mot_de_passe, admin.mot_de_passe):
+        raise HTTPException(status_code=400, detail="Mot de passe incorrect.")
+    email = donnees.nouvel_email.strip().lower()
+    if email == admin.email.lower():
+        raise HTTPException(status_code=400, detail="C'est déjà votre adresse e-mail.")
+    if db.query(models.User).filter(func.lower(models.User.email) == email, models.User.id != admin.id).first():
+        raise HTTPException(status_code=400, detail="Cet e-mail est déjà utilisé.")
+    admin.email = email
+    db.commit()
+    return {"access_token": creer_jeton({"sub": admin.email, "role": admin.role}), "token_type": "bearer",
+            "email": admin.email}
 
 
 # ===========================================================================

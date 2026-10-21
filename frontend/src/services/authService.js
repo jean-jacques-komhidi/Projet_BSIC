@@ -50,3 +50,10 @@ export async function changerMotDePasse(ancien, nouveau) {
   });
   return reponse.data;
 }
+// Changer son propre e-mail (administrateur, mot de passe exigé).
+// Le jeton contient l'e-mail : le nouveau jeton renvoyé remplace l'ancien.
+export async function changerMonEmail(nouvelEmail, motDePasse) {
+  const reponse = await api.put("/auth/moi/email", { nouvel_email: nouvelEmail, mot_de_passe: motDePasse });
+  localStorage.setItem("token", reponse.data.access_token);
+  return reponse.data;
+}
